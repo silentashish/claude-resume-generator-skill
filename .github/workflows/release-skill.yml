@@ -1,0 +1,54 @@
+name: Release skill
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-skill
+  cancel-in-progress: false
+
+jobs:
+  package-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Package skill
+        id: package
+        run: |
+          set -euo pipefail
+          skill_name="$(awk -F': ' '/^name:/{print $2; exit}' SKILL.md)"
+          if [ -z "${skill_name}" ]; then
+            echo "Could not read 'name' from SKILL.md" >&2
+            exit 1
+          fi
+          artifact="${skill_name}.skill"
+
+          # Stage the skill under a top-level dir so it extracts cleanly.
+          staging="$(mktemp -d)"
+          dest="${staging}/${skill_name}"
+          mkdir -p "${dest}"
+          cp -R SKILL.md README.md assets references scripts "${dest}/"
+
+          # A .skill file is a zip archive.
+          ( cd "${staging}" && zip -r -q "${GITHUB_WORKSPACE}/${artifact}" "${skill_name}" )
+
+          echo "skill_name=${skill_name}" >> "${GITHUB_OUTPUT}"
+          echo "artifact=${artifact}" >> "${GITHUB_OUTPUT}"
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ github.run_number }}
+          name: ${{ steps.package.outputs.skill_name }} v${{ github.run_number }}
+          body: |
+            Packaged `${{ steps.package.outputs.artifact }}` from commit ${{ github.sha }}.
+
+            Install by unzipping into your Claude skills directory.
+          files: ${{ steps.package.outputs.artifact }}
+          fail_on_unpublished_files: true
