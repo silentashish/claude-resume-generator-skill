@@ -1,0 +1,38 @@
+% One-page cover letter matching the resume header. Rendered by scripts/render.py.
+\documentclass[11pt,letterpaper]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage[hidelinks]{hyperref}
+% Use Latin Modern + T1 when the distribution has it (better glyphs and
+% copy-paste fidelity); fall back silently so the build never dies on a
+% minimal TeX install, and never force bitmap fonts, which extract as garbage.
+\IfFileExists{lmodern.sty}{\usepackage[T1]{fontenc}\usepackage{lmodern}}{}
+\usepackage{parskip}
+\pagestyle{empty}
+\raggedright
+
+\begin{document}
+
+\begin{center}
+  {\LARGE\bfseries << contact.name >>}\\[0.35em]
+  << contact_line >>
+\end{center}
+\vspace{1.2em}
+
+\noindent << date >>
+
+\vspace{0.8em}
+\noindent Re: << role_title >> at << company >>
+
+\vspace{0.8em}
+\noindent << salutation >>
+
+<% for p in paragraphs %>
+<< p >>
+\par\vspace{0.75em}
+<% endfor %>
+
+\vspace{1.2em}
+\noindent << closing >>\\
+<< contact.name >>
+
+\end{document}

@@ -1,0 +1,80 @@
+% ATS-safe single-column resume. Rendered by scripts/render.py.
+% Design rules that exist for parsing reasons, not aesthetic ones:
+%   - single column, no tabular/multicol layout (column layouts interleave text
+%     when extracted linearly, scrambling the reading order)
+%   - no icons or images anywhere (image contact info extracts as nothing)
+%   - standard section names (Experience / Education / Skills / Projects)
+%   - dates right-aligned with \hfill, which is a real horizontal fill, so the
+%     date stays on the same extracted line as its employer
+\documentclass[<< font_size >>pt,letterpaper]{article}
+\usepackage[margin=<< margin >>in]{geometry}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage[hidelinks]{hyperref}
+% Use Latin Modern + T1 when the distribution has it (better glyphs and
+% copy-paste fidelity); fall back silently so the build never dies on a
+% minimal TeX install, and never force bitmap fonts, which extract as garbage.
+\IfFileExists{lmodern.sty}{\usepackage[T1]{fontenc}\usepackage{lmodern}}{}
+
+\pagestyle{empty}
+\setlist[itemize]{leftmargin=1.2em, topsep=1pt, itemsep=0.5pt, parsep=0pt}
+\titleformat{\section}{\large\bfseries\uppercase}{}{0em}{}[\vspace{-0.7em}\rule{\linewidth}{0.6pt}]
+\titlespacing{\section}{0pt}{<< section_before >>ex}{0.6ex}
+\raggedbottom
+\raggedright
+
+\begin{document}
+
+%% ---- Header: plain text only ----
+\begin{center}
+  {\LARGE\bfseries << contact.name >>}\\[0.35em]
+  << contact_line >>
+\end{center}
+\vspace{0.2em}
+
+<% if summary %>
+\section{Summary}
+<< summary >>
+<% endif %>
+
+\section{Experience}
+<% for role in experience %>
+<% if date_style == 'inline' %>
+\noindent\textbf{<< role.company >>}<% if role.location %>, << role.location >><% endif %> $|$ << role.dates >>\\
+\textit{<< role.title >>}
+<% else %>
+\noindent\textbf{<< role.company >>}<% if role.location %>, << role.location >><% endif %> \hfill << role.dates >>\\
+\textit{<< role.title >>}
+<% endif %>
+\begin{itemize}
+<% for b in role.bullets %>  \item << b >>
+<% endfor %>\end{itemize}
+<% endfor %>
+
+<% if projects %>
+\section{Projects}
+<% for p in projects %>
+\noindent\textbf{<< p.name >>}<% if p.tech %> \hfill << p.tech >><% endif %>
+<% if p.bullets %>\begin{itemize}
+<% for b in p.bullets %>  \item << b >>
+<% endfor %>\end{itemize}<% endif %>
+<% endfor %>
+<% endif %>
+
+\section{Education}
+<% for e in education %>
+<% if date_style == 'inline' %>
+\noindent\textbf{<< e.institution >>} $|$ << e.dates >>\\
+<% else %>
+\noindent\textbf{<< e.institution >>} \hfill << e.dates >>\\
+<% endif %>
+<< e.degree >><% if e.detail %>\\<< e.detail >><% endif %>\par
+\vspace{0.3em}
+<% endfor %>
+
+\section{Skills}
+<% for g in skills %>
+\noindent\textbf{<< g.label >>:} << g["items"] >>\\
+<% endfor %>
+
+\end{document}
