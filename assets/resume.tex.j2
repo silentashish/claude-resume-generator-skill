@@ -77,4 +77,18 @@
 \noindent\textbf{<< g.label >>:} << g["items"] >>\\
 <% endfor %>
 
+<% if certifications %>
+\section{Certifications}
+\begin{itemize}
+<% for c in certifications %>  \item \textbf{<< c.name >>}<< (', ' ~ c.issuer) if c.issuer else '' >><< (' (' ~ c.year ~ ')') if c.year else '' >>
+<% endfor %>\end{itemize}
+<% endif %>
+
+<% if publications %>
+\section{Publications}
+\begin{itemize}
+<% for p in publications %>  \item << p.title >><< ('. \\textit{' ~ p.venue ~ '}') if p.venue else '' >><< (', ' ~ p.year) if p.year else '' >><< ('. ' ~ p.url) if p.url else '' >>
+<% endfor %>\end{itemize}
+<% endif %>
+
 \end{document}

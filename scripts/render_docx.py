@@ -108,6 +108,34 @@ def build_docx(raw: dict, out_path: Path) -> Path:
         sr.bold = True
         sp.add_run(g["items"])
 
+    if raw.get("certifications"):
+        _heading(doc, "Certifications", sec)
+        for cert in raw["certifications"]:
+            cp = doc.add_paragraph(style="List Bullet")
+            cp.paragraph_format.space_after = Pt(0)
+            nr = cp.add_run(cert["name"])
+            nr.bold = True
+            rest = ""
+            if cert.get("issuer"):
+                rest += f", {cert['issuer']}"
+            if cert.get("year"):
+                rest += f" ({cert['year']})"
+            if rest:
+                cp.add_run(rest)
+
+    if raw.get("publications"):
+        _heading(doc, "Publications", sec)
+        for pub in raw["publications"]:
+            line = pub["title"]
+            if pub.get("venue"):
+                line += f". {pub['venue']}"
+            if pub.get("year"):
+                line += f", {pub['year']}"
+            if pub.get("url"):
+                line += f". {pub['url']}"
+            pp = doc.add_paragraph(line, style="List Bullet")
+            pp.paragraph_format.space_after = Pt(0)
+
     doc.save(str(out_path))
     return out_path
 

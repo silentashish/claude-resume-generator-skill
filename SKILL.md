@@ -89,6 +89,15 @@ at 4 per role and 120 characters each; those limits are what keep the document
 on its target page count, so treat a validation error as "this bullet needs to
 be sharper", not as an obstacle.
 
+Pull the whole master profile, not just the jobs. Personal/open-source
+`projects`, `certifications`, and `publications` are separate schema fields, and
+each is real evidence the paid roles may not show - a certification is an exact
+keyword an ATS looks for, and a publication or side project often carries the
+one term the JD wants. Include the entries relevant to this posting; on a tight
+one-pager, drop the least-relevant of these before you cut a job bullet. Match a
+certification's name to the issuer's official string, and never list one the
+user does not hold - the honesty constraint covers these fields too.
+
 Bullets should lead with the outcome and name the technology, in plain speech.
 No em dashes, no "responsible for", no adjectives doing work that a number
 should do. `lint_style()` flags these and runs automatically in the build.

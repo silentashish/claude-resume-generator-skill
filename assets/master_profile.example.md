@@ -68,11 +68,32 @@ role that centers on it.
 
 ## Projects
 
+Personal and open-source work. These are real evidence too -- surface them when
+a posting asks for something your paid roles do not show.
+
 ### opensearch-local MCP server
 Claude Desktop integration with local OpenSearch and Grafana. Agentic tools
 require the MCP `sampling` capability advertised during the `initialize`
 handshake.
 **Tech:** Python, MCP, OpenSearch, Grafana
+
+## Certifications
+
+Use the issuer's exact official name -- an ATS matches the string literally.
+Record the year so an expired cert is not surfaced as current.
+
+- AWS Certified Solutions Architect - Associate, Amazon Web Services, 2024
+- Deep Learning Specialization, DeepLearning.AI (Coursera), 2022
+
+## Publications
+
+One line each: title, venue, year, and a DOI or link if there is one. Papers,
+articles, patents, and conference talks all belong here.
+
+- Mitigating Reconstruction Loss in Neural Compression Using DoRA. *M.S. Thesis,
+  UAH*, 2026.
+- Weight-Decomposed Low-Rank Adaptation for Downstream Segmentation. *Workshop
+  on Efficient ML*, 2025. doi.org/10.0000/example
 
 ## Gaps and constraints
 

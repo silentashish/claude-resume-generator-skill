@@ -90,6 +90,35 @@ class Education(BaseModel):
     detail: Optional[str] = Field(default=None, max_length=140)
 
 
+class Certification(BaseModel):
+    """A credential the user actually holds.
+
+    Kept to one line each: name, issuer, year. A certification is a keyword an
+    ATS looks for by exact string ('AWS Certified Solutions Architect'), so the
+    name must match the issuer's official wording rather than a paraphrase.
+    """
+
+    name: str = Field(max_length=100)
+    issuer: Optional[str] = Field(default=None, max_length=80)
+    year: Optional[str] = Field(default=None, max_length=12)
+
+
+class Publication(BaseModel):
+    """One published work: paper, article, patent, or talk.
+
+    Single line each. The title carries the keywords; venue and year establish
+    that it is real and locatable. Do not pad with an abstract -- a resume lists
+    publications, it does not reproduce them.
+    """
+
+    title: str = Field(max_length=180)
+    venue: Optional[str] = Field(default=None, max_length=120,
+                                 description="journal, conference, or publisher")
+    year: Optional[str] = Field(default=None, max_length=12)
+    url: Optional[str] = Field(default=None, max_length=120,
+                               description="DOI or link, printed literally for ATS")
+
+
 class SkillGroup(BaseModel):
     """One labelled row of skills, e.g. 'Languages: Python, Go, Java'.
 
@@ -108,6 +137,8 @@ class ResumeData(BaseModel):
     education: List[Education] = Field(min_length=1)
     skills: List[SkillGroup] = Field(min_length=1, max_length=MAX_SKILL_GROUPS)
     projects: List[Project] = Field(default_factory=list)
+    certifications: List[Certification] = Field(default_factory=list)
+    publications: List[Publication] = Field(default_factory=list)
     target_pages: int = Field(default=2, ge=1, le=2)
     date_style: str = Field(
         default="right",
