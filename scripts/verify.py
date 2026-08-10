@@ -81,7 +81,9 @@ def check_ats(doc, text, data=None):
         name = data["contact"]["name"]
         first_page = doc[0].get_text()
         # Extraction can split a name across whitespace; compare token by token.
-        ok = all(part in first_page for part in name.split())
+        # Case-insensitive because the template renders the name in caps.
+        fp_low = first_page.lower()
+        ok = all(part.lower() in fp_low for part in name.split())
         results.append(_check("name_on_first_page", ok,
                               f"'{name}' present" if ok else f"'{name}' not found on page 1"))
 
@@ -101,8 +103,11 @@ def check_ats(doc, text, data=None):
             detached = []
             for r in data.get("experience", []):
                 comp = r["company"].split(",")[0]
-                ci, di = raw_text.find(comp), raw_text.find(r["dates"])
-                if ci >= 0 and di >= 0 and abs(di - ci) > 400:
+                # A company can also appear in the summary, so measure the
+                # closest company/date occurrence pair, not the first ones.
+                cis = [m.start() for m in re.finditer(re.escape(comp), raw_text)]
+                dis = [m.start() for m in re.finditer(re.escape(r["dates"]), raw_text)]
+                if cis and dis and min(abs(d - c) for c in cis for d in dis) > 400:
                     detached.append(comp)
             results.append(_check(
                 "dates_stay_with_employer", not detached,

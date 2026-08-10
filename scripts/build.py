@@ -33,6 +33,12 @@ from schema import lint_style  # noqa: E402
 HERE = Path(__file__).parent
 
 
+def _copy(src, dst) -> None:
+    """shutil.copy that tolerates re-building from files already in outdir."""
+    if Path(src).resolve() != Path(dst).resolve():
+        shutil.copy(src, dst)
+
+
 def slug(s: str) -> str:
     s = re.sub(r"[^a-zA-Z0-9]+", "-", s.strip().lower())
     return re.sub(r"-+", "-", s).strip("-") or "unknown"
@@ -63,9 +69,9 @@ def main() -> int:
         print(json.dumps({"ok": False, "stage": "render", "error": str(e)}, indent=2))
         return 1
 
-    shutil.copy(a.data, outdir / "resume_data.json")
+    _copy(a.data, outdir / "resume_data.json")
     if a.jd:
-        shutil.copy(a.jd, outdir / "job-description.md")
+        _copy(a.jd, outdir / "job-description.md")
 
     cmd = [sys.executable, str(HERE / "verify.py"), str(outdir / "resume.pdf"),
            "--data", str(outdir / "resume_data.json")]
@@ -80,7 +86,7 @@ def main() -> int:
     if a.cover:
         try:
             cover = render(Path(a.cover), outdir, "cover")
-            shutil.copy(a.cover, outdir / "cover_data.json")
+            _copy(a.cover, outdir / "cover_data.json")
         except Exception as e:
             cover = {"ok": False, "error": str(e)}
 

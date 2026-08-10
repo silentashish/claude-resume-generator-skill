@@ -23,7 +23,12 @@ MODULES = {
 }
 OPTIONAL = {"docx": "python-docx, only needed for --docx output"}
 
-LATEX_PACKAGES = ["geometry", "enumitem", "titlesec", "hyperref"]
+# carlito (with its fontaxes dependency) is the Calibri-metric font the design
+# is built around; extsizes provides extarticle for real 9pt; ulem provides
+# breakable underlined links; microtype disables ATS-hostile ligatures.
+LATEX_PACKAGES = ["geometry", "enumitem", "titlesec", "hyperref", "xcolor",
+                  "ulem", "carlito", "fontaxes", "microtype"]
+LATEX_CLASSES = ["extarticle"]
 
 
 def main() -> int:
@@ -51,13 +56,15 @@ def main() -> int:
             notes.append(f"--    {mod} not installed - {why}")
 
     if shutil.which("kpsewhich"):
-        for pkg in LATEX_PACKAGES:
-            r = subprocess.run(["kpsewhich", f"{pkg}.sty"],
+        for name, ext in ([(p, "sty") for p in LATEX_PACKAGES]
+                          + [(c, "cls") for c in LATEX_CLASSES]):
+            r = subprocess.run(["kpsewhich", f"{name}.{ext}"],
                                capture_output=True, text=True)
             if r.stdout.strip():
-                notes.append(f"ok    LaTeX package {pkg}")
+                notes.append(f"ok    LaTeX package {name}")
             else:
-                problems.append(f"MISSING LaTeX package {pkg}.sty")
+                problems.append(f"MISSING LaTeX package {name}.{ext} "
+                                f"(tlmgr install {'extsizes' if name == 'extarticle' else name})")
 
     print("\n".join(notes))
     if problems:

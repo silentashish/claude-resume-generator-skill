@@ -42,10 +42,17 @@ python3 scripts/preflight.py
 ```
 
 Needs `pdflatex`, `pdftoppm`, and Python `pydantic`, `jinja2`, `pymupdf`
-(`python-docx` only for the optional Word output). It also needs a master
-profile markdown file - the single source of truth for everything the user has
-actually done. See `assets/master_profile.example.md` for the expected shape.
-`$CV_HOME` sets the output root and defaults to `~/cv`.
+(`python-docx` only for the optional Word output), plus the LaTeX packages
+`carlito`, `extsizes`, `ulem`, `fontaxes`, and `microtype` (one
+`tlmgr install` away on TinyTeX; preflight names any that are missing). It
+also needs a master profile markdown file - the single source of truth for
+everything the user has actually done. See `assets/master_profile.example.md`
+for the expected shape. `$CV_HOME` sets the output root and defaults to `~/cv`.
+
+The design is deliberate: Carlito (a metric clone of Calibri, the same face
+LibreOffice ships) at high density, uppercase name, blue underlined hyperlinks,
+bold inline metrics. It reproduces the user's approved reference resume; do not
+swap fonts or drift back toward the default LaTeX serif look.
 
 ## Workflow
 
@@ -85,9 +92,22 @@ to apply anyway is one they make with open eyes.
 ### 4. Write the payload
 
 Write `resume_data.json` matching `scripts/schema.py`. The schema caps bullets
-at 4 per role and 120 characters each; those limits are what keep the document
-on its target page count, so treat a validation error as "this bullet needs to
-be sharper", not as an obstacle.
+at 6 per role and 350 characters each - sized so a full master-profile bullet
+fits without compression. **Carry bullets over from the master profile
+near-verbatim.** Rewriting a rich 300-character bullet down to a 110-character
+stub loses the metrics, the technology names, and the ATS keywords all at once;
+that over-summarization is the single most common way a build of this skill has
+gone wrong. Select which bullets to include and reorder them for the role, but
+do not compress the ones you keep. The autofit ladder absorbs length; a
+two-page target at 9pt Carlito holds every role at full richness.
+
+Preserve the profile's `**bold**` markers on the impact phrase of each bullet -
+they render as real bold in the PDF and are part of the approved design. Carry
+the links too: each role's `project_name`/`project_url`, each project's GitHub
+`url`, each certification's `url`, and each publication's `url` + `link_label`
+(plus its one-sentence `note`). Contact links use paired fields: `linkedin` is
+the display text, `linkedin_url` the target (same for `github`/`website`). The
+name stays title-case in the data; the template renders it in caps.
 
 Pull the whole master profile, not just the jobs. Personal/open-source
 `projects`, `certifications`, and `publications` are separate schema fields, and
@@ -152,12 +172,14 @@ flush-right date can migrate to the end of the extracted text stream, detached
 from its employer. A parser pairing them positionally then records the wrong
 dates. `verify.py` detects this as `dates_stay_with_employer`.
 
-- `"date_style": "right"` (default) - better looking, adjacency warning expected.
-- `"date_style": "inline"` - `Company | Location | Dates` on one line. Slightly
-  plainer, but employer and date cannot be separated.
+- `"date_style": "right"` - flush-right dates, adjacency warning expected.
+- `"date_style": "inline"` - bold dates after the italic title
+  (`Title | Dates`), which is also how the approved reference resume lays out
+  dates. Employer and date cannot be separated under extraction.
 
 Choose `inline` when the application funnels through a large-company ATS and
-`right` when a human reads it first. Tell the user which one you picked and why.
+`right` when a human reads it first; `inline` matches the reference design, so
+it is the usual pick. Tell the user which one you picked and why.
 
 ## Bundled files
 

@@ -16,17 +16,25 @@ from pydantic import BaseModel, Field, field_validator
 # --- Layout budget -----------------------------------------------------------
 # These are the levers that control page count. Raise them only if the verify
 # step says there is room; lower them when a document overflows.
-MAX_BULLETS_PER_ROLE = 4
-MAX_BULLET_CHARS = 120
-MAX_SKILL_GROUPS = 6
+# Calibrated against the approved dense two-page reference layout (Carlito
+# ~10pt, 0.5in margins): a 350-char bullet wraps to about three lines there.
+MAX_BULLETS_PER_ROLE = 6
+MAX_BULLET_CHARS = 350
+MAX_SKILL_GROUPS = 8
 
 
 class Contact(BaseModel):
-    """Plain-text contact fields.
+    """Plain-text contact fields, optionally hyperlinked.
 
     Deliberately strings, not icons. Icons in a resume header are images, and
     image-based contact info is one of the most common reasons an ATS returns a
     blank phone/email field.
+
+    `linkedin`/`github`/`website` hold the *display* text (a readable URL like
+    'linkedin.com/in/ashish-...'). The matching `*_url` field holds the full
+    https:// target for the clickable link. If the `*_url` is omitted the
+    display text is printed without a link. Because the display text is itself
+    the URL, a parser that drops link annotations still reads the address.
     """
 
     name: str = Field(min_length=2, max_length=60)
@@ -34,8 +42,11 @@ class Contact(BaseModel):
     email: str
     phone: Optional[str] = None
     linkedin: Optional[str] = None
+    linkedin_url: Optional[str] = None
     github: Optional[str] = None
+    github_url: Optional[str] = None
     website: Optional[str] = None
+    website_url: Optional[str] = None
 
     @field_validator("name")
     @classmethod
@@ -54,6 +65,12 @@ class Role(BaseModel):
     location: Optional[str] = Field(default=None, max_length=40)
     dates: str = Field(max_length=30, description="e.g. 'Jan 2024 - Present'")
     bullets: List[str] = Field(min_length=1, max_length=MAX_BULLETS_PER_ROLE)
+    project_name: Optional[str] = Field(
+        default=None, max_length=80,
+        description="shipped product/site to cite under the role, e.g. 'Houzz Moodboard'")
+    project_url: Optional[str] = Field(
+        default=None, max_length=200,
+        description="link target for project_name; rendered as 'Project: <name>'")
 
     @field_validator("bullets")
     @classmethod
@@ -70,8 +87,10 @@ class Role(BaseModel):
 
 
 class Project(BaseModel):
-    name: str = Field(max_length=60)
-    tech: Optional[str] = Field(default=None, max_length=90)
+    name: str = Field(max_length=80)
+    tech: Optional[str] = Field(default=None, max_length=120)
+    url: Optional[str] = Field(default=None, max_length=200,
+                               description="GitHub/demo link; shown as 'GitHub: <short url>'")
     bullets: List[str] = Field(default_factory=list, max_length=3)
 
     @field_validator("bullets")
@@ -101,6 +120,8 @@ class Certification(BaseModel):
     name: str = Field(max_length=100)
     issuer: Optional[str] = Field(default=None, max_length=80)
     year: Optional[str] = Field(default=None, max_length=12)
+    url: Optional[str] = Field(default=None, max_length=250,
+                               description="verification link, e.g. the Coursera certificate URL")
 
 
 class Publication(BaseModel):
@@ -115,8 +136,12 @@ class Publication(BaseModel):
     venue: Optional[str] = Field(default=None, max_length=120,
                                  description="journal, conference, or publisher")
     year: Optional[str] = Field(default=None, max_length=12)
-    url: Optional[str] = Field(default=None, max_length=120,
-                               description="DOI or link, printed literally for ATS")
+    url: Optional[str] = Field(default=None, max_length=250,
+                               description="DOI or link; rendered as a labelled hyperlink")
+    link_label: Optional[str] = Field(default=None, max_length=20,
+                                      description="display text for the url, e.g. 'arXiv'; defaults to 'Link'")
+    note: Optional[str] = Field(default=None, max_length=400,
+                                description="one-sentence result summary; supports **bold** on the key metric")
 
 
 class SkillGroup(BaseModel):
@@ -126,19 +151,22 @@ class SkillGroup(BaseModel):
     keyword in extractable plain text.
     """
 
-    label: str = Field(max_length=28)
-    items: str = Field(max_length=200)
+    label: str = Field(max_length=40)
+    items: str = Field(max_length=400)
 
 
 class ResumeData(BaseModel):
     contact: Contact
-    summary: Optional[str] = Field(default=None, max_length=400)
+    summary: Optional[str] = Field(default=None, max_length=900)
     experience: List[Role] = Field(min_length=1)
     education: List[Education] = Field(min_length=1)
     skills: List[SkillGroup] = Field(min_length=1, max_length=MAX_SKILL_GROUPS)
     projects: List[Project] = Field(default_factory=list)
     certifications: List[Certification] = Field(default_factory=list)
     publications: List[Publication] = Field(default_factory=list)
+    publications_suffix: Optional[str] = Field(
+        default=None, max_length=30,
+        description="appended to the Publications header, e.g. ' (70+ Citations)'")
     target_pages: int = Field(default=2, ge=1, le=2)
     date_style: str = Field(
         default="right",
@@ -212,6 +240,27 @@ def escape_latex(text: str) -> str:
     return "".join(out)
 
 
+# Inline emphasis: the master profile marks the impact phrase of a bullet with
+# **double asterisks** (markdown-style). Asterisks survive escape_latex
+# untouched, so conversion happens after escaping and cannot be injected around.
+_BOLD_RE = re.compile(r"\*\*(.+?)\*\*", re.DOTALL)
+
+
+def apply_bold(text: str) -> str:
+    """Convert **marked** phrases into \\textbf{...}."""
+    return _BOLD_RE.sub(r"\\textbf{\1}", text)
+
+
+def escape_url(url: str) -> str:
+    """Escape a raw URL for use as an \\href target.
+
+    Only % and # are special inside hyperref's link argument; running a URL
+    through escape_latex instead would corrupt underscores and tildes in the
+    link target.
+    """
+    return url.replace("\\", "").replace("%", r"\%").replace("#", r"\#")
+
+
 def escape_model(obj):
     """Recursively escape every string in a validated model / dict / list."""
     if isinstance(obj, BaseModel):
@@ -256,6 +305,8 @@ def lint_style(data: dict) -> List[str]:
 
     for where, t in texts:
         low = t.lower()
+        if t.count("**") % 2 != 0:
+            warnings.append(f"{where}: unbalanced ** bold marker; it will print literally")
         if "\u2014" in t or "\u2013" in t:
             warnings.append(f"{where}: contains an em/en dash; rewrite as plain speech")
         for h in _HEDGES:

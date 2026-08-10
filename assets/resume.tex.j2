@@ -1,94 +1,108 @@
 % ATS-safe single-column resume. Rendered by scripts/render.py.
-% Design rules that exist for parsing reasons, not aesthetic ones:
+% Design matches the approved dense reference layout: Carlito (metric clone of
+% Calibri, the same face LibreOffice ships), uppercase name, blue underlined
+% hyperlinks, bold inline metrics, tight two-page density.
+% Rules that exist for parsing reasons, not aesthetic ones:
 %   - single column, no tabular/multicol layout (column layouts interleave text
 %     when extracted linearly, scrambling the reading order)
 %   - no icons or images anywhere (image contact info extracts as nothing)
 %   - standard section names (Experience / Education / Skills / Projects)
-%   - dates right-aligned with \hfill, which is a real horizontal fill, so the
-%     date stays on the same extracted line as its employer
-\documentclass[<< font_size >>pt,letterpaper]{article}
+%   - every hyperlink's display text is the readable address or a label next to
+%     one, so a parser that strips link annotations loses nothing
+\documentclass[<< font_size >>pt,letterpaper]{extarticle}
 \usepackage[margin=<< margin >>in]{geometry}
 \usepackage{enumitem}
 \usepackage{titlesec}
-\usepackage[hidelinks]{hyperref}
-% Use Latin Modern + T1 when the distribution has it (better glyphs and
-% copy-paste fidelity); fall back silently so the build never dies on a
-% minimal TeX install, and never force bitmap fonts, which extract as garbage.
-\IfFileExists{lmodern.sty}{\usepackage[T1]{fontenc}\usepackage{lmodern}}{}
+\usepackage{xcolor}
+\definecolor{linkblue}{RGB}{5,99,193}
+\usepackage[colorlinks=true,urlcolor=linkblue,linkcolor=linkblue]{hyperref}
+% Breakable underlines for links; degrade to no underline on a minimal install.
+\IfFileExists{ulem.sty}{\usepackage[normalem]{ulem}}{\newcommand{\uline}[1]{##1}}
+% Carlito = Calibri metrics; fall back to Helvetica so the build never dies.
+\IfFileExists{carlito.sty}
+  {\usepackage[sfdefault]{carlito}}
+  {\usepackage[T1]{fontenc}\usepackage[scaled=0.92]{helvet}\renewcommand{\familydefault}{\sfdefault}}
+% No fi/fl ligatures: they extract as single Unicode glyphs (U+FB01...) and
+% break naive ATS keyword matching ("fintech" becomes "&#xFB01;ntech").
+\IfFileExists{microtype.sty}{\usepackage{microtype}\DisableLigatures{encoding = *, family = *}}{}
 
 \pagestyle{empty}
-\setlist[itemize]{leftmargin=1.2em, topsep=1pt, itemsep=0.5pt, parsep=0pt}
-\titleformat{\section}{\large\bfseries\uppercase}{}{0em}{}[\vspace{-0.7em}\rule{\linewidth}{0.6pt}]
-\titlespacing{\section}{0pt}{<< section_before >>ex}{0.6ex}
+\setlist[itemize]{leftmargin=1.15em, topsep=1pt, itemsep=1pt, parsep=0pt}
+\titleformat{\section}{\large\bfseries\uppercase}{}{0em}{}[\vspace{-0.65em}\rule{\linewidth}{0.8pt}]
+\titlespacing{\section}{0pt}{<< section_before >>ex}{0.55ex}
+\setlength{\parskip}{0pt}
 \raggedbottom
 \raggedright
 
 \begin{document}
 
-%% ---- Header: plain text only ----
+%% ---- Header ----
 \begin{center}
-  {\LARGE\bfseries << contact.name >>}\\[0.35em]
-  << contact_line >>
+  {\LARGE\bfseries\MakeUppercase{<< contact.name >>}}\\[0.3em]
+  << contact_line1 >><% if contact_line2 %>\\
+  << contact_line2 >><% endif %>
 \end{center}
-\vspace{0.2em}
+\vspace{0.1em}
 
 <% if summary %>
 \section{Summary}
 << summary >>
 <% endif %>
 
-\section{Experience}
+\section{Skills}
+\begin{itemize}
+<% for g in skills %>  \item \textbf{<< g.label >>:} << g["items"] >>
+<% endfor %>\end{itemize}
+
+\section{Work Experience}
 <% for role in experience %>
 <% if date_style == 'inline' %>
-\noindent\textbf{<< role.company >>}<% if role.location %>, << role.location >><% endif %> $|$ << role.dates >>\\
-\textit{<< role.title >>}
+\noindent\textbf{<< role.company >>}<% if role.location %> -- << role.location >><% endif %>\\
+\textit{<< role.title >>} $|$ \textbf{<< role.dates >>}
 <% else %>
-\noindent\textbf{<< role.company >>}<% if role.location %>, << role.location >><% endif %> \hfill << role.dates >>\\
+\noindent\textbf{<< role.company >>}<% if role.location %> -- << role.location >><% endif %> \hfill \textbf{<< role.dates >>}\\
 \textit{<< role.title >>}
 <% endif %>
 \begin{itemize}
 <% for b in role.bullets %>  \item << b >>
-<% endfor %>\end{itemize}
+<% endfor %><% if role.project_name %>  \item[] Project: <% if role.project_url %>\href{<< role.project_url >>}{\uline{<< role.project_name >>}}<% else %><< role.project_name >><% endif %>
+<% endif %>\end{itemize}
+\vspace{0.35em}
 <% endfor %>
 
 <% if projects %>
 \section{Projects}
 <% for p in projects %>
-\noindent\textbf{<< p.name >>}<% if p.tech %> \hfill << p.tech >><% endif %>
+\noindent\textbf{<< p.name >>}<% if p.url %> $|$ GitHub: \href{<< p.url >>}{\uline{<< p.url_display >>}}<% endif %>
 <% if p.bullets %>\begin{itemize}
 <% for b in p.bullets %>  \item << b >>
 <% endfor %>\end{itemize}<% endif %>
+\vspace{0.25em}
 <% endfor %>
+<% endif %>
+
+<% if publications %>
+\section{Publications<< publications_suffix | default('') >>}
+\begin{itemize}
+<% for p in publications %>  \item \textbf{<< p.title >>}<% if p.venue or p.year %> (<% if p.venue %><< p.venue >><% endif %><% if p.venue and p.year %>, <% endif %><% if p.year %><< p.year >><% endif %>)<% endif %><% if p.note %>: << p.note >><% endif %><% if p.url %> \href{<< p.url >>}{\uline{<< p.link_label or 'Link' >>}}<% endif %>
+<% endfor %>\end{itemize}
 <% endif %>
 
 \section{Education}
 <% for e in education %>
 <% if date_style == 'inline' %>
-\noindent\textbf{<< e.institution >>} $|$ << e.dates >>\\
+\noindent\textbf{<< e.institution >>}\\
+\textit{<< e.degree >>} $|$ \textbf{<< e.dates >>}<% if e.detail %>\\<< e.detail >><% endif %>\par
 <% else %>
-\noindent\textbf{<< e.institution >>} \hfill << e.dates >>\\
+\noindent\textbf{<< e.institution >>} \hfill \textbf{<< e.dates >>}\\
+\textit{<< e.degree >>}<% if e.detail %>\\<< e.detail >><% endif %>\par
 <% endif %>
-<< e.degree >><% if e.detail %>\\<< e.detail >><% endif %>\par
-\vspace{0.3em}
-<% endfor %>
-
-\section{Skills}
-<% for g in skills %>
-\noindent\textbf{<< g.label >>:} << g["items"] >>\\
+\vspace{0.35em}
 <% endfor %>
 
 <% if certifications %>
 \section{Certifications}
-\begin{itemize}
-<% for c in certifications %>  \item \textbf{<< c.name >>}<< (', ' ~ c.issuer) if c.issuer else '' >><< (' (' ~ c.year ~ ')') if c.year else '' >>
-<% endfor %>\end{itemize}
-<% endif %>
-
-<% if publications %>
-\section{Publications}
-\begin{itemize}
-<% for p in publications %>  \item << p.title >><< ('. \\textit{' ~ p.venue ~ '}') if p.venue else '' >><< (', ' ~ p.year) if p.year else '' >><< ('. ' ~ p.url) if p.url else '' >>
-<% endfor %>\end{itemize}
+\noindent <% for c in certifications %><% if c.url %>\href{<< c.url >>}{\uline{<< c.name >>}}<% else %>\textbf{<< c.name >>}<% endif %><% if c.issuer %> (<< c.issuer >>)<% endif %><% if c.year %> << c.year >><% endif %><% if not loop.last %> $|$ <% endif %><% endfor %>
 <% endif %>
 
 \end{document}

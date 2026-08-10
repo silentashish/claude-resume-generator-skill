@@ -7,6 +7,15 @@ choose from when a posting asks for something unexpected.
 
 Record numbers here with their provenance, so a bullet can be defended later.
 
+Two conventions the renderer understands and preserves:
+
+- `**double asterisks**` around the impact phrase of a bullet become real bold
+  in the PDF. Bold the metric or headline result, nothing else.
+- Links ride along as URLs next to their display text. A role can carry a
+  `Project link:` line (rendered as a clickable `Project: <name>` under its
+  bullets), projects carry their GitHub URL, certifications and publications
+  carry verification links.
+
 ---
 
 ## Contact
@@ -15,9 +24,9 @@ Record numbers here with their provenance, so a bullet can be defended later.
 - Location: Atlanta, GA
 - Email: you@example.com
 - Phone: 555-0100
-- LinkedIn: linkedin.com/in/yourhandle
-- GitHub: github.com/yourhandle
-- Website: yoursite.com
+- LinkedIn: linkedin.com/in/yourhandle (link: https://www.linkedin.com/in/yourhandle/)
+- GitHub: github.com/yourhandle (link: https://github.com/yourhandle)
+- Website: yoursite.com (link: https://yoursite.com)
 - Work authorization: requires sponsorship (note it here so cover letters can
   address it when the posting raises it)
 
@@ -25,6 +34,7 @@ Record numbers here with their provenance, so a bullet can be defended later.
 
 ### NASA IMPACT - Research Engineer (part-time)
 2024 - Present | Huntsville, AL
+Project link: CSDA Data Acquisition Request System - https://example.nasa.gov/tasking
 
 Everything done here, one line each. More detail than any resume will hold.
 
@@ -32,8 +42,8 @@ Everything done here, one line each. More detail than any resume will hold.
   (`dags/vendors/airbus_optical/expand.py`) with a two-pass extraction approach;
   `unzip_files()` now returns `status: error` on dropped entries.
   *Provenance: PR #— ; before/after entry counts in the run log.*
-- Built RAG pipelines with LangGraph over a ~2M document corpus; p95 latency
-  down 40% by routing low-complexity queries away from the large model.
+- Built RAG pipelines with LangGraph over a ~2M document corpus; **p95 latency
+  down 40%** by routing low-complexity queries away from the large model.
   *Provenance: Grafana dashboard, week of —.*
 - Ran the observability stack (Grafana, Prometheus, Loki) across 3 clusters.
 - Thesis work: DoRA applied to neural codecs, mIoU 0.643 to 0.723 (+8.04 pp) on

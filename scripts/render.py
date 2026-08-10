@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -23,18 +24,21 @@ sys.path.insert(0, str(Path(__file__).parent))
 import pymupdf  # noqa: E402
 from jinja2 import Environment, FileSystemLoader, StrictUndefined  # noqa: E402
 
-from schema import CoverLetterData, ResumeData, escape_model  # noqa: E402
+from schema import (CoverLetterData, ResumeData, apply_bold, escape_latex,  # noqa: E402
+                    escape_model, escape_url)
 
 ASSETS = Path(__file__).parent.parent / "assets"
 
 # Progressively denser typography. The renderer walks this list and stops at the
-# first setting that fits the target page count.
+# first setting that fits the target page count. The template uses extarticle,
+# so 9pt is a real font size rather than a scaled hack. The approved reference
+# layout sits around 10pt Carlito with 0.5in margins.
 FIT_LADDER = [
-    {"font_size": 11, "margin": 0.75, "section_before": 1.6},
-    {"font_size": 11, "margin": 0.6, "section_before": 1.4},
-    {"font_size": 10, "margin": 0.6, "section_before": 1.3},
-    {"font_size": 10, "margin": 0.5, "section_before": 1.1},
-    {"font_size": 10, "margin": 0.45, "section_before": 0.9},
+    {"font_size": 11, "margin": 0.65, "section_before": 1.3},
+    {"font_size": 10, "margin": 0.6, "section_before": 1.2},
+    {"font_size": 10, "margin": 0.5, "section_before": 1.0},
+    {"font_size": 9, "margin": 0.5, "section_before": 0.9},
+    {"font_size": 9, "margin": 0.45, "section_before": 0.8},
 ]
 
 
@@ -50,16 +54,70 @@ def _env() -> Environment:
     )
 
 
-def contact_line(contact: dict) -> str:
-    """Pipe-separated plain-text contact row.
+def _href(url: str, display: str) -> str:
+    """A breakable underlined hyperlink whose display text is readable on paper.
 
-    Plain text with pipe separators survives every extractor tested. Icons are
-    images and extract as nothing; \\href links have been observed to lose their
-    display text in some parsers, so URLs are printed literally.
+    The display text is always the human-readable address or label, so a parser
+    that strips link annotations still reads the URL as plain text. \\uline
+    (ulem) rather than \\underline so long links can wrap.
     """
-    parts = [contact.get("location"), contact.get("phone"), contact.get("email"),
-             contact.get("linkedin"), contact.get("github"), contact.get("website")]
-    return " $|$ ".join(p for p in parts if p)
+    return rf"\href{{{escape_url(url)}}}{{\uline{{{display}}}}}"
+
+
+def short_url(url: str) -> str:
+    """github.com/user/repo from https://github.com/user/repo/ -- display form."""
+    return re.sub(r"^https?://(www\.)?", "", url or "").rstrip("/")
+
+
+def contact_lines(contact: dict, raw_contact: dict) -> tuple:
+    """Two centered header rows matching the approved reference layout.
+
+    Row 1: location | Phone: ... | Email: <mailto link>
+    Row 2: LinkedIn: <link> | GitHub: <link> | Portfolio: <link>
+
+    `contact` is the LaTeX-escaped copy (display text), `raw_contact` the
+    unescaped original (link targets). Labelled links keep both goals: the
+    label is the keyword an ATS greps for, the display text is the address.
+    """
+    line1 = [contact.get("location"),
+             f"Phone: {contact['phone']}" if contact.get("phone") else None]
+    if contact.get("email"):
+        line1.append("Email: " + _href("mailto:" + raw_contact["email"], contact["email"]))
+
+    line2 = []
+    for key, label in (("linkedin", "LinkedIn"), ("github", "GitHub"),
+                       ("website", "Portfolio")):
+        disp = contact.get(key)
+        if not disp:
+            continue
+        url = raw_contact.get(f"{key}_url")
+        line2.append(f"{label}: " + (_href(url, disp) if url else disp))
+
+    sep = " $|$ "
+    return sep.join(p for p in line1 if p), sep.join(line2)
+
+
+_URL_KEY = re.compile(r"(^url$|_url$)")
+
+
+def _linkify(obj, raw):
+    """Post-escape fix-up pass, walking the escaped tree alongside the raw one.
+
+    Two jobs: URL fields get href-escaping instead of LaTeX text escaping
+    (escape_latex corrupts underscores in a link target), and every other
+    string gets its **bold** markers converted to \\textbf.
+    """
+    if isinstance(obj, dict):
+        return {
+            k: (escape_url(raw[k]) if isinstance(v, str) and _URL_KEY.search(k)
+                else _linkify(v, raw[k]))
+            for k, v in obj.items()
+        }
+    if isinstance(obj, list):
+        return [_linkify(v, r) for v, r in zip(obj, raw)]
+    if isinstance(obj, str):
+        return apply_bold(obj)
+    return obj
 
 
 def compile_pdf(tex_path: Path, workdir: Path) -> Path:
@@ -95,8 +153,14 @@ def render(data_path: Path, outdir: Path, kind: str = "resume",
     workdir = outdir / ".build"
     workdir.mkdir(exist_ok=True)
 
-    ctx = escape_model(model)
-    ctx["contact_line"] = contact_line(ctx["contact"])
+    dump = model.model_dump()
+    ctx = _linkify(escape_model(model), dump)
+    ctx["contact_line1"], ctx["contact_line2"] = contact_lines(
+        ctx["contact"], dump["contact"])
+    # Readable display text for project links (github.com/user/repo).
+    for esc_p, raw_p in zip(ctx.get("projects", []), dump.get("projects", [])):
+        if raw_p.get("url"):
+            esc_p["url_display"] = escape_latex(short_url(raw_p["url"]))
     ctx.setdefault("date_style", raw.get("date_style", "right"))
 
     template = _env().get_template(

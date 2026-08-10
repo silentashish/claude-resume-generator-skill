@@ -1,11 +1,17 @@
 % One-page cover letter matching the resume header. Rendered by scripts/render.py.
-\documentclass[11pt,letterpaper]{article}
+\documentclass[11pt,letterpaper]{extarticle}
 \usepackage[margin=1in]{geometry}
-\usepackage[hidelinks]{hyperref}
-% Use Latin Modern + T1 when the distribution has it (better glyphs and
-% copy-paste fidelity); fall back silently so the build never dies on a
-% minimal TeX install, and never force bitmap fonts, which extract as garbage.
-\IfFileExists{lmodern.sty}{\usepackage[T1]{fontenc}\usepackage{lmodern}}{}
+\usepackage{xcolor}
+\definecolor{linkblue}{RGB}{5,99,193}
+\usepackage[colorlinks=true,urlcolor=linkblue,linkcolor=linkblue]{hyperref}
+\IfFileExists{ulem.sty}{\usepackage[normalem]{ulem}}{\newcommand{\uline}[1]{##1}}
+% Carlito = Calibri metrics; fall back to Helvetica so the build never dies.
+\IfFileExists{carlito.sty}
+  {\usepackage[sfdefault]{carlito}}
+  {\usepackage[T1]{fontenc}\usepackage[scaled=0.92]{helvet}\renewcommand{\familydefault}{\sfdefault}}
+% No fi/fl ligatures: they extract as single Unicode glyphs and break naive
+% ATS keyword matching.
+\IfFileExists{microtype.sty}{\usepackage{microtype}\DisableLigatures{encoding = *, family = *}}{}
 \usepackage{parskip}
 \pagestyle{empty}
 \raggedright
@@ -13,8 +19,9 @@
 \begin{document}
 
 \begin{center}
-  {\LARGE\bfseries << contact.name >>}\\[0.35em]
-  << contact_line >>
+  {\LARGE\bfseries\MakeUppercase{<< contact.name >>}}\\[0.3em]
+  << contact_line1 >><% if contact_line2 %>\\
+  << contact_line2 >><% endif %>
 \end{center}
 \vspace{1.2em}
 
