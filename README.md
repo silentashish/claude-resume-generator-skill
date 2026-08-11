@@ -1,7 +1,7 @@
 
 # Resume Tailor Skill Documentation
 
-**Resume Tailor** is an AI agent skill that turns a job description and a candidate's master profile into ATS-verified, tailored resumes and matching cover letters compiled into publication-quality PDFs.
+**Resume Tailor** is an Claude Code skill that turns a job description and a candidate's master profile into ATS-verified, tailored resumes and matching cover letters compiled into publication-quality PDFs.
 
 ---
 
