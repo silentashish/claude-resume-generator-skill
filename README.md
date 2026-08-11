@@ -5,6 +5,66 @@
 
 ---
 
+## How to Use It
+
+### 1. Download the latest release
+
+Download the latest version from the [Releases](https://github.com/silentashish/claude-resume-generator-skill/releases/) page.
+
+### 2. Install the skill
+
+Go to your Claude Code skills directory:
+
+```bash
+cd ~/.claude/skills
+```
+
+Then extract the `resume-tailor.skill` file into this directory.
+
+### 3. Add your resume and cover letter
+
+Place your master resume and cover letter in the `~/cv` directory:
+
+```text
+~/cv/
+├── master-profile.md
+└── cover-letter.md
+```
+
+You can configure the skill to use a different directory if needed.
+
+### 4. Tailor your resume
+
+From Claude Code, simply run:
+
+```text
+/resume-tailor <link_to_job>
+```
+
+For example:
+
+```text
+/resume-tailor https://www.linkedin.com/jobs/view/123456789
+```
+
+The skill will analyze the job description, tailor your resume and cover letter, and generate the final output.
+
+### 5. Find your tailored resume
+
+The generated files will be organized by role, company, and job ID:
+
+```text
+~/cv/<role>/<company_name>/<job_id>/
+```
+
+For example:
+
+```text
+~/cv/software-engineer/acme/123456789/
+```
+
+---
+
 ## Key Principles & Core Philosophy
 
 1. **Code Decides Quality, LLM Writes Content**  
