@@ -140,7 +140,8 @@ python3 scripts/preflight.py
 
 ### System Dependencies
 - **CLI Tools:** `pdflatex` (TeX Live / MacTeX), `pdftoppm` and `pdftotext` (Poppler utilities)
-- **LaTeX Packages:** `carlito`, `extsizes`, `ulem`, `fontaxes`, `microtype`, `titlesec`, `enumitem`, `hyperref`, `geometry`, `xcolor`; optional `needspace` and `fancyhdr`
+- **LaTeX Packages:** `carlito`, `extsizes`, `ulem`, `fontaxes`, `microtype`, `titlesec`, `enumitem`, `hyperref`, `geometry`, `xcolor`; optional `needspace`, `fancyhdr`, and `mylatexformat` (preamble cache, roughly a 2x build speedup)
+- **Environment variables:** `CV_HOME` (output root, default `~/cv`), `RESUME_TAILOR_JOBS` (parallel compiles, default CPU count), `RESUME_TAILOR_CACHE` (format cache dir, default `~/.cache/resume-tailor`), `RESUME_TAILOR_NO_FORMAT_CACHE=1` (disable the cache)
 - **Python Libraries:** `pydantic`, `jinja2`, `pymupdf` (PyMuPDF / `fitz`), `python-docx` (optional for Word export)
 - **User Files:**
   - `master_profile.md`: Single source of truth for candidate background (see `assets/master_profile.example.md`).
@@ -174,6 +175,7 @@ python3 scripts/preflight.py
 - Passes raw payload through LaTeX escaping (`%` $\rightarrow$ `\%`, `&` $\rightarrow$ `\&`, `$` $\rightarrow$ `\$`, etc.).
 - Injects values into Jinja2 templates (`assets/resume.tex.j2`).
 - Runs the **Autofit Loop**: compiles every rung of a typography ladder (11pt to 9pt, 0.75in to 0.45in margins, leading, bullet and entry spacing), keeps the one that lands on the target page count with the fullest last page, then nudges leading upward until the last page ends at the margin. Content is never dropped.
+- Keeps that loop fast: the LaTeX preamble is precompiled once per font size and cached under `~/.cache/resume-tailor`, attempts compile in parallel across CPU cores, and only the final render gets a second pdflatex pass. A full build is about 3.5s on four cores (first build on a machine about 1s more).
 
 ### 6. Automated ATS & Layout Verification
 - Uses `scripts/verify.py` to inspect the compiled PDF:

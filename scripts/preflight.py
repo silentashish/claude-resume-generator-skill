@@ -9,7 +9,6 @@ from __future__ import annotations
 import importlib
 import shutil
 import subprocess
-import sys
 
 BINARIES = {
     "pdflatex": "LaTeX compiler (TeX Live / MiKTeX)",
@@ -31,7 +30,8 @@ LATEX_PACKAGES = ["geometry", "enumitem", "titlesec", "hyperref", "xcolor",
 # The template degrades gracefully without these (no orphan guard, no page-2
 # footer), so they are reported rather than required.
 LATEX_OPTIONAL = {"needspace": "keeps an entry header on the same page as its bullets",
-                  "fancyhdr": "name and page number in the footer of page 2"}
+                  "fancyhdr": "name and page number in the footer of page 2",
+                  "mylatexformat": "precompiled preamble cache, about a 2x faster build"}
 LATEX_CLASSES = ["extarticle"]
 
 
@@ -71,7 +71,8 @@ def main() -> int:
                 problems.append(f"MISSING LaTeX package {name}.{ext} "
                                 f"(tlmgr install {'extsizes' if name == 'extarticle' else name})")
         for name, why in LATEX_OPTIONAL.items():
-            r = subprocess.run(["kpsewhich", f"{name}.sty"], capture_output=True, text=True)
+            ext = "ltx" if name == "mylatexformat" else "sty"
+            r = subprocess.run(["kpsewhich", f"{name}.{ext}"], capture_output=True, text=True)
             if r.stdout.strip():
                 notes.append(f"ok    LaTeX package {name} (optional)")
             else:

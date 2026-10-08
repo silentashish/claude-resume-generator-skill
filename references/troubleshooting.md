@@ -101,8 +101,18 @@ Check that new template fields go through `escape_model`.
 and `fancyhdr`; `texlive-fonts-extra` carries `carlito`;
 `texlive-plain-generic` carries `ulem`. On TinyTeX, `tlmgr install` each name.
 
-**Slow first compile** - LaTeX may generate font caches on the very first run.
-Subsequent compiles take roughly 0.15s; a full autofit walk is a few seconds.
+**Slow build** - A cold pdflatex run on this document costs about 0.55s,
+almost all of it loading the preamble (hyperref, microtype, Carlito). Three
+things keep a full autofit build around 3.5s on four cores: the preamble is
+precompiled once per font size into `~/.cache/resume-tailor/fmt` (set
+`RESUME_TAILOR_CACHE` to move it, `RESUME_TAILOR_NO_FORMAT_CACHE=1` to disable
+it) and reused across builds; the ladder sweep and the leading fine-tune each
+run as one parallel batch (`RESUME_TAILOR_JOBS` caps the width); and search
+attempts compile with a single pass, with two passes only for the final
+render. A build that takes 15s or more means the format cache is off, usually
+because `mylatexformat` is not installed (preflight reports it; it ships with
+`texlive-latex-extra`), or the machine has one core. The report's
+`render.format_cache` says whether the cache was used.
 
 **Word output is a page longer than the PDF** - `--docx` follows the PDF's
 font size and margins but Word has no autofit and slightly different Calibri

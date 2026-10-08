@@ -10,8 +10,13 @@
 %   - standard section names (Experience / Education / Skills / Projects)
 %   - every hyperlink's display text is the readable address or a label next to
 %     one, so a parser that strips link annotations loses nothing
+% Everything from here to the "Per-build settings" line depends only on the
+% font size, so render.py dumps it into a precompiled format once per font
+% size (mylatexformat's end-of-dump marker is rendered just above that line)
+% and reuses it across every autofit attempt and every later build. Keep
+% per-payload and per-rung values (name, margin, leading, spacing) below it.
 \documentclass[<< font_size >>pt,letterpaper]{extarticle}
-\usepackage[margin=<< margin >>in,footskip=0.28in]{geometry}
+\usepackage{geometry}
 \usepackage{enumitem}
 \usepackage{titlesec}
 \usepackage{xcolor}
@@ -32,14 +37,20 @@
 % name alone at the foot of page 1 is the most visible layout defect a
 % two-page resume can have.
 \IfFileExists{needspace.sty}{\usepackage{needspace}}{\newcommand{\Needspace}[1]{}}
+\IfFileExists{fancyhdr.sty}{\usepackage{fancyhdr}\newif\ifhavefancy\havefancytrue}{\newif\ifhavefancy\havefancyfalse}
+<< endofdump >>
+
+% ---- Per-build settings (below the format split) ---------------------------
+\geometry{margin=<< margin >>in,footskip=0.28in}
 % Continuation pages carry the name and page number in the footer so a
 % separated second sheet is still attributable. Page 1 stays clean.
-\IfFileExists{fancyhdr.sty}{
-  \usepackage{fancyhdr}
+\ifhavefancy
   \fancypagestyle{resume}{\fancyhf{}\renewcommand{\headrulewidth}{0pt}%
     \fancyfoot[C]{\footnotesize\color{footgray}<< contact.name >> \textbar{} Page \thepage}}
   \pagestyle{resume}
-}{\pagestyle{empty}}
+\else
+  \pagestyle{empty}
+\fi
 
 % ---- Typography -----------------------------------------------------------
 \linespread{<< linespread >>}

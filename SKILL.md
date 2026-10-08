@@ -122,12 +122,18 @@ writes everything to `$CV_HOME/<role>/<company>/<job-id>/`: `resume.pdf`,
 `tailoring-notes.md`, and `build-report.json`. Exit code is non-zero when any
 hard check fails, and the console `next_step` says what to do.
 
-Autofit is on by default. A compile takes about 0.15s, so the renderer tries
-every density on its ladder (11pt to 9pt, 0.75in to 0.45in margins, leading,
-bullet and entry spacing), keeps the setting that lands on the target page
-count with the fullest last page, then nudges leading up until the last
-page ends as close to the margin as the content allows. It never drops
-content. The chosen settings and the `fill` fraction come back in the report.
+Autofit is on by default. The renderer tries every density on its ladder
+(11pt to 9pt, 0.75in to 0.45in margins, leading, bullet and entry spacing),
+keeps the setting that lands on the target page count with the fullest last
+page, then nudges leading up until the last page ends as close to the margin
+as the content allows. It never drops content. The chosen settings and the
+`fill` fraction come back in the report.
+
+A full build takes about 3.5s on a 4-core machine (the first build on a
+machine adds about 1s to precompile the LaTeX preamble into a cache under
+`~/.cache/resume-tailor`). The attempts compile in parallel across CPU cores;
+`RESUME_TAILOR_JOBS=1` serialises them if the machine is busy. Rebuilding
+after a payload edit is cheap, so iterate on content freely.
 
 ### 6. Filling the page budget
 

@@ -3,26 +3,41 @@
 Usage:
     python3 render.py resume_data.json --outdir OUT [--kind resume|cover] [--autofit] [--docx]
 
-Why autofit exists: pdflatex compiles this document in about 0.15s, so it is
-cheaper to try every typographic density and keep the best one than to
-hand-tune the payload. Content is never dropped -- only font size, margins,
-leading, and spacing move.
+Why autofit exists: a compile is cheap, so it is cheaper to try every
+typographic density and keep the best one than to hand-tune the payload.
+Content is never dropped -- only font size, margins, leading, and spacing move.
 
 "Best" has two parts, in order: the document must land on the target page
 count, and among the settings that do, the one that leaves the least empty
 space on the last page wins. A resume that fits in 1.6 pages at the loosest
 setting is not a success; the fill number comes back in the result so the
 caller can see that the payload is short of content rather than guess.
+
+Where the time goes, and what is done about it: a cold pdflatex run on this
+document is about 0.55s, and roughly 0.5s of that is loading the preamble
+(hyperref, microtype, the Carlito font). The body itself is nearly free. So:
+  - the preamble is dumped once per font size into a precompiled format
+    (mylatexformat) and cached across builds; a compile with it is ~0.35s;
+  - every autofit attempt is independent, so the ladder sweep and the
+    leading fine-tune each run as one parallel batch across the CPU cores;
+  - attempts compile with a single pass (page breaks do not depend on the
+    second pass; nothing here cross-references), and only the final render
+    gets two passes.
+Set RESUME_TAILOR_JOBS to cap the parallelism and RESUME_TAILOR_CACHE to move
+the format cache (default ~/.cache/resume-tailor).
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -72,6 +87,19 @@ LEADING_STEP = 0.01
 LEADING_MAX_EXTRA = 0.08
 
 POINTS_PER_INCH = 72.0
+ENDOFDUMP_MARKER = r"\endofdump"
+# The marker is split on as a whole line so a mention of it inside a comment
+# can never truncate the static preamble.
+_ENDOFDUMP_LINE = "\n" + ENDOFDUMP_MARKER + "\n"
+
+
+def _jobs() -> int:
+    """Parallel compile slots: RESUME_TAILOR_JOBS, else the CPU count."""
+    try:
+        n = int(os.environ.get("RESUME_TAILOR_JOBS", "0"))
+    except ValueError:
+        n = 0
+    return n if n > 0 else max(1, os.cpu_count() or 1)
 
 
 def _env() -> Environment:
@@ -155,16 +183,100 @@ def _linkify(obj, raw):
     return obj
 
 
-def compile_pdf(tex_path: Path, workdir: Path) -> Path:
-    """Compile twice so \\hfill positions, page totals, and references settle."""
-    for _ in range(2):
+# --- Precompiled preamble ----------------------------------------------------
+
+class FormatCache:
+    """Precompiled LaTeX formats, one per distinct static preamble.
+
+    The static preamble (everything above the \\endofdump marker in the
+    template) depends only on the font size, so three formats cover the whole
+    ladder. They are keyed by a hash of that text plus the pdflatex version and
+    kept under RESUME_TAILOR_CACHE (default ~/.cache/resume-tailor), so the
+    first build pays ~0.7s per font size and every later build pays nothing.
+    Disabled transparently when mylatexformat is not installed.
+    """
+
+    def __init__(self):
+        root = os.environ.get("RESUME_TAILOR_CACHE") or str(Path.home() / ".cache" / "resume-tailor")
+        self.dir = Path(root).expanduser() / "fmt"
+        self.enabled = self._available()
+        self._version = None
+
+    @staticmethod
+    def _available() -> bool:
+        if os.environ.get("RESUME_TAILOR_NO_FORMAT_CACHE"):
+            return False
+        if not shutil.which("kpsewhich"):
+            return False
+        r = subprocess.run(["kpsewhich", "mylatexformat.ltx"], capture_output=True, text=True)
+        return bool(r.stdout.strip())
+
+    def version(self) -> str:
+        if self._version is None:
+            r = subprocess.run(["pdflatex", "--version"], capture_output=True, text=True)
+            self._version = r.stdout.splitlines()[0] if r.stdout else "unknown"
+        return self._version
+
+    def name_for(self, static_preamble: str) -> str:
+        key = hashlib.sha256((static_preamble + "\n" + self.version()).encode()).hexdigest()[:16]
+        return f"rt-{key}"
+
+    def ensure(self, static_preamble: str) -> str | None:
+        """Return the format name for this preamble, building it if needed."""
+        if not self.enabled:
+            return None
+        name = self.name_for(static_preamble)
+        fmt = self.dir / f"{name}.fmt"
+        if fmt.exists():
+            return name
+        self.dir.mkdir(parents=True, exist_ok=True)
+        build = self.dir / f"build-{name}-{os.getpid()}"
+        build.mkdir(exist_ok=True)
+        # mylatexformat ties the format to the dumped file's name, so the
+        # source is named like the documents that will use it.
+        src = build / "resume.tex"
+        src.write_text(static_preamble + _ENDOFDUMP_LINE
+                       + r"\begin{document}\end{document}" + "\n")
         proc = subprocess.run(
-            ["pdflatex", "-interaction=nonstopmode", "-halt-on-error",
-             "-output-directory", str(workdir), str(tex_path)],
-            capture_output=True, text=True,
+            ["pdflatex", "-ini", "-interaction=nonstopmode", f"-jobname={name}",
+             "-output-directory", str(build), "&pdflatex", "mylatexformat.ltx", str(src)],
+            capture_output=True, text=True, cwd=str(build),
         )
+        built = build / f"{name}.fmt"
+        if proc.returncode != 0 or not built.exists():
+            shutil.rmtree(build, ignore_errors=True)
+            self.enabled = False  # fall back to cold compiles for this run
+            return None
+        os.replace(built, fmt)  # atomic: concurrent builds of the same key are safe
+        shutil.rmtree(build, ignore_errors=True)
+        return name
+
+    def env(self) -> dict:
+        """Environment for pdflatex so it finds the cached formats."""
+        e = dict(os.environ)
+        if self.enabled:
+            e["TEXFORMATS"] = f"{self.dir}{os.pathsep}" + e.get("TEXFORMATS", "")
+        return e
+
+
+def compile_pdf(tex_path: Path, workdir: Path, passes: int = 2,
+                fmt: str | None = None, env: dict | None = None) -> Path:
+    """Compile `tex_path` into `workdir`.
+
+    Two passes let \\hfill positions and page totals settle in the final
+    render; a single pass is enough during the autofit search because page
+    breaks do not depend on the second pass and nothing cross-references.
+    """
+    cmd = ["pdflatex", "-interaction=nonstopmode", "-halt-on-error",
+           "-output-directory", str(workdir)]
+    if fmt:
+        cmd += ["-fmt", fmt]
+    cmd.append(str(tex_path))
+    proc = None
+    for _ in range(passes):
+        proc = subprocess.run(cmd, capture_output=True, text=True, env=env)
     pdf = workdir / (tex_path.stem + ".pdf")
-    if not pdf.exists():
+    if proc.returncode != 0 or not pdf.exists():
         log = workdir / (tex_path.stem + ".log")
         tail = ""
         if log.exists():
@@ -216,29 +328,90 @@ def _build_context(raw: dict, kind: str) -> dict:
         # Optional strings default to "" so the template never prints "None".
         ctx["publications_suffix"] = ctx.get("publications_suffix") or ""
         ctx["summary"] = ctx.get("summary") or ""
+    ctx["endofdump"] = ""
     return ctx
 
 
-def _try(template, ctx: dict, settings: dict, workdir: Path, kind: str) -> tuple:
-    """Render and compile once with `settings`; return (pdf, pages, fill)."""
-    ctx = {**ctx, **settings}
-    tex = workdir / f"{kind}.tex"
-    tex.write_text(template.render(**ctx))
-    pdf = compile_pdf(tex, workdir)
-    pages, fill = measure(pdf, settings["margin"])
-    return pdf, pages, fill
+class Compiler:
+    """Renders a template context at a given setting and compiles it.
+
+    Owns the format cache lookup: the rendered source is split at the
+    \\endofdump marker, the static half is turned into (or found as) a cached
+    format, and pdflatex is pointed at it.
+    """
+
+    def __init__(self, template, ctx: dict, workdir: Path, kind: str):
+        self.template, self.ctx, self.workdir, self.kind = template, ctx, workdir, kind
+        self.cache = FormatCache() if kind == "resume" else None
+        self._formats: dict = {}
+
+    def prepare(self, settings_list: list) -> None:
+        """Build (or find) the format for every font size in `settings_list`.
+
+        Done up front and in parallel across font sizes, so the attempt threads
+        never race to build the same format.
+        """
+        if not (self.cache and self.cache.enabled):
+            return
+        todo = {}
+        for s in settings_list:
+            fs = s.get("font_size")
+            if fs not in self._formats and fs not in todo:
+                tex = self.template.render(**{**self.ctx, **s, "endofdump": ENDOFDUMP_MARKER})
+                if _ENDOFDUMP_LINE not in tex:
+                    self.cache.enabled = False  # template lost its marker line
+                    return
+                todo[fs] = tex.split(_ENDOFDUMP_LINE, 1)[0]
+        if not todo:
+            return
+        with ThreadPoolExecutor(max_workers=min(_jobs(), len(todo))) as pool:
+            futs = {fs: pool.submit(self.cache.ensure, static) for fs, static in todo.items()}
+            for fs, f in futs.items():
+                self._formats[fs] = f.result()
+
+    def source(self, settings: dict) -> tuple:
+        """(tex source, format name or None) for one setting."""
+        if self.cache and self.cache.enabled:
+            self.prepare([settings])
+        fmt = self._formats.get(settings.get("font_size"))
+        marker = ENDOFDUMP_MARKER if fmt else ""
+        return self.template.render(**{**self.ctx, **settings, "endofdump": marker}), fmt
+
+    def run(self, settings: dict, subdir: str | None = None, passes: int = 1) -> tuple:
+        """Compile one attempt; returns (pdf path, pages, fill)."""
+        tex, fmt = self.source(settings)
+        wd = self.workdir / subdir if subdir else self.workdir
+        wd.mkdir(parents=True, exist_ok=True)
+        tex_path = wd / f"{self.kind}.tex"
+        tex_path.write_text(tex)
+        pdf = compile_pdf(tex_path, wd, passes=passes, fmt=fmt,
+                          env=self.cache.env() if self.cache else None)
+        pages, fill = measure(pdf, settings["margin"])
+        return pdf, pages, fill
+
+    def run_many(self, settings_list: list, prefix: str) -> list:
+        """Compile several attempts in parallel; returns [(settings, pages, fill)]."""
+        self.prepare(settings_list)
+        jobs = min(_jobs(), max(1, len(settings_list)))
+        with ThreadPoolExecutor(max_workers=jobs) as pool:
+            futs = [pool.submit(self.run, s, f"{prefix}{i}") for i, s in enumerate(settings_list)]
+            out = []
+            for s, f in zip(settings_list, futs):
+                _, pages, fill = f.result()
+                out.append((s, pages, fill))
+        return out
 
 
-def autofit(template, ctx: dict, workdir: Path, target: int, kind: str) -> tuple:
-    """Walk the ladder, then nudge leading, keeping the fullest fitting layout.
+def autofit(comp: Compiler, target: int) -> tuple:
+    """Sweep the ladder, then fine-tune leading, keeping the fullest fitting layout.
 
     Returns (settings, pages, fill, attempts). `attempts` records every try so
-    the build report can show why a setting was chosen.
+    the build report can show why a setting was chosen. Both the sweep and the
+    fine-tune are one parallel batch each.
     """
     attempts = []
-    best = None  # (fill, -index, settings, pages)
-    for i, rung in enumerate(FIT_LADDER):
-        _, pages, fill = _try(template, ctx, rung, workdir, kind)
+    best = None  # (key, settings, pages, fill)
+    for i, (rung, pages, fill) in enumerate(comp.run_many(FIT_LADDER, "rung")):
         attempts.append({**rung, "pages": pages, "fill": round(fill, 3)})
         if pages <= target:
             key = (pages == target, fill, -i)
@@ -249,24 +422,23 @@ def autofit(template, ctx: dict, workdir: Path, target: int, kind: str) -> tuple
         # Nothing fits even at the densest rung. Return it so the caller sees
         # the overflow; the honest fix is editorial, not typographic.
         densest = FIT_LADDER[-1]
-        _, pages, fill = _try(template, ctx, densest, workdir, kind)
+        _, pages, fill = comp.run(densest, "final", passes=2)
         return densest, pages, fill, attempts
 
     _, chosen, pages, fill = best
-    # Fine-tune: add leading in small steps while the page count holds. This
-    # closes the gap between "fits" and "fills" without changing font or margin.
-    extra = LEADING_STEP
-    while extra <= LEADING_MAX_EXTRA + 1e-9 and fill < 0.995:
-        cand = {**chosen, "linespread": round(chosen["linespread"] + extra, 3)}
-        _, p2, f2 = _try(template, ctx, cand, workdir, kind)
-        attempts.append({**cand, "pages": p2, "fill": round(f2, 3), "fine_tune": True})
-        if p2 != pages or f2 < fill:
-            break
-        chosen, fill = cand, f2
-        extra += LEADING_STEP
+    if fill < 0.995:
+        # Fine-tune: every candidate leading at once; keep the largest that
+        # holds the page count without losing fill.
+        steps = int(round(LEADING_MAX_EXTRA / LEADING_STEP))
+        cands = [{**chosen, "linespread": round(chosen["linespread"] + LEADING_STEP * k, 3)}
+                 for k in range(1, steps + 1)]
+        for cand, p2, f2 in comp.run_many(cands, "lead"):
+            attempts.append({**cand, "pages": p2, "fill": round(f2, 3), "fine_tune": True})
+            if p2 == pages and f2 >= fill:
+                chosen, fill = cand, f2
 
-    # Re-render the winner so the .tex/.pdf on disk match the reported settings.
-    _try(template, ctx, chosen, workdir, kind)
+    # Final render with two passes so the .tex/.pdf on disk match the report.
+    _, pages, fill = comp.run(chosen, None, passes=2)
     return chosen, pages, fill, attempts
 
 
@@ -286,19 +458,20 @@ def render(data_path: Path, outdir: Path, kind: str = "resume",
     template = _env().get_template(
         "resume.tex.j2" if kind == "resume" else "cover_letter.tex.j2"
     )
+    comp = Compiler(template, ctx, workdir, kind)
 
     if kind == "resume":
         target = int(raw.get("target_pages", 2))
         if autofit_enabled:
-            chosen, pages, fill, attempts = autofit(template, ctx, workdir, target, kind)
+            chosen, pages, fill, attempts = autofit(comp, target)
         else:
             chosen = DEFAULT_SETTINGS
-            _, pages, fill = _try(template, ctx, chosen, workdir, kind)
+            _, pages, fill = comp.run(chosen, None, passes=2)
             attempts = [{**chosen, "pages": pages, "fill": round(fill, 3)}]
     else:
         target = 1
         chosen = {"margin": 1.0}
-        _, pages, fill = _try(template, ctx, chosen, workdir, kind)
+        _, pages, fill = comp.run(chosen, None, passes=2)
         attempts = []
 
     final_pdf = outdir / f"{kind}.pdf"
@@ -313,7 +486,8 @@ def render(data_path: Path, outdir: Path, kind: str = "resume",
 
     result = {"pdf": str(final_pdf), "pages": pages, "target_pages": target,
               "fill": round(fill, 3), "settings": chosen,
-              "fits": pages <= target, "attempts": attempts}
+              "fits": pages <= target, "attempts": attempts,
+              "format_cache": bool(comp.cache and comp.cache.enabled)}
 
     if make_docx and kind == "resume":
         from render_docx import build_docx
