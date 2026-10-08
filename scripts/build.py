@@ -45,13 +45,20 @@ def _copy(src, dst) -> None:
 
 
 def slug(s: str) -> str:
+    """Lower-case, hyphenated directory name from a role/company/job id."""
     s = re.sub(r"[^a-zA-Z0-9]+", "-", s.strip().lower())
     return re.sub(r"-+", "-", s).strip("-") or "unknown"
 
 
-def next_step(res: dict, verify: dict, min_fill: float) -> str:
+def next_step(res: dict, verify: dict, min_fill: float, cover: dict | None = None) -> str:
     """One sentence telling the caller what the build needs, if anything."""
     failed = {r["check"] for r in verify.get("results", []) if r["hard"] and not r["passed"]}
+    if cover is not None and not cover.get("ok", True):
+        return (f"Cover letter failed to render: {cover.get('error', 'unknown error')}. "
+                "Fix cover_data.json or the LaTeX error in the report and rebuild.")
+    if cover is not None and not cover.get("fits", True):
+        return (f"Cover letter runs to {cover.get('pages')} pages; it must be one. "
+                "Cut the weakest paragraph and rebuild.")
     if not res["fits"]:
         return ("Content overflows the target even at the densest typography: "
                 "trim the weakest bullet from the oldest role, or raise target_pages.")
@@ -69,6 +76,7 @@ def next_step(res: dict, verify: dict, min_fill: float) -> str:
 
 
 def main() -> int:
+    """Render, verify, and file one application; exit 1 on any hard failure."""
     ap = argparse.ArgumentParser()
     ap.add_argument("data")
     ap.add_argument("--role", required=True)
@@ -101,8 +109,11 @@ def main() -> int:
     if a.notes:
         _copy(a.notes, outdir / "tailoring-notes.md")
 
+    # Pass the margin autofit chose so verify measures fill inside the same
+    # text area the renderer did, instead of inferring it from page-1 text.
     cmd = [sys.executable, str(HERE / "verify.py"), str(outdir / "resume.pdf"),
-           "--data", str(outdir / "resume_data.json")]
+           "--data", str(outdir / "resume_data.json"),
+           "--margin", str(res["settings"]["margin"])]
     if a.jd:
         cmd += ["--jd", str(outdir / "job-description.md"), "--company", a.company]
     proc = subprocess.run(cmd, capture_output=True, text=True)
@@ -118,11 +129,12 @@ def main() -> int:
         except Exception as e:
             cover = {"ok": False, "error": str(e)}
 
-    ok = bool(verify.get("ok")) and res["fits"] and (cover is None or cover.get("ok", True))
+    cover_ok = cover is None or (cover.get("ok", True) and cover.get("fits", True))
+    ok = bool(verify.get("ok")) and res["fits"] and cover_ok
     report = {
         "ok": ok,
         "outdir": str(outdir),
-        "next_step": next_step(res, verify, min_fill),
+        "next_step": next_step(res, verify, min_fill, cover),
         "render": res,
         "style_warnings": lint_style(raw),
         "verify": verify,
@@ -151,6 +163,7 @@ def main() -> int:
                      if not r["hard"] and not r["passed"]],
         "style_warnings": report["style_warnings"][:8],
         "cover": None if cover is None else {"ok": cover.get("ok", True),
+                                             "fits": cover.get("fits", True),
                                              "pages": cover.get("pages"),
                                              "error": cover.get("error")},
         "pages_rendered": report["pages_rendered"],

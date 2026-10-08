@@ -82,6 +82,7 @@ class Role(BaseModel):
     @field_validator("bullets")
     @classmethod
     def bullets_fit(cls, v: List[str]) -> List[str]:
+        """Reject empty bullets and any longer than MAX_BULLET_CHARS."""
         for i, b in enumerate(v):
             if len(b) > MAX_BULLET_CHARS:
                 raise ValueError(
@@ -103,6 +104,7 @@ class Project(BaseModel):
     @field_validator("bullets")
     @classmethod
     def bullets_fit(cls, v: List[str]) -> List[str]:
+        """Reject project bullets longer than MAX_BULLET_CHARS."""
         for b in v:
             if len(b) > MAX_BULLET_CHARS:
                 raise ValueError(f"project bullet exceeds {MAX_BULLET_CHARS} chars: {b[:60]}...")

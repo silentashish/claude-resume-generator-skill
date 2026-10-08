@@ -33,6 +33,7 @@ _BOLD_RE = re.compile(r"\*\*(.+?)\*\*", re.DOTALL)
 
 
 def _short_url(url: str) -> str:
+    """github.com/user/repo from https://github.com/user/repo/ -- display form."""
     return re.sub(r"^https?://(www\.)?", "", url or "").rstrip("/")
 
 
@@ -92,6 +93,7 @@ def _bottom_border(p):
 
 
 def _heading(doc, text, section):
+    """Uppercase bold section heading with a hairline rule beneath."""
     p = doc.add_paragraph()
     p.paragraph_format.space_before = Pt(9)
     p.paragraph_format.space_after = Pt(3)
@@ -104,6 +106,7 @@ def _heading(doc, text, section):
 
 
 def _tight(p):
+    """Remove the trailing paragraph space so lines inside an entry sit close."""
     p.paragraph_format.space_after = Pt(0)
     return p
 
@@ -117,6 +120,7 @@ def _entry_gap(doc):
 
 
 def _right_tab(p, section):
+    """Right-aligned tab stop at the text width, for flush-right dates."""
     width = section.page_width - section.left_margin - section.right_margin
     ppr = p._p.get_or_add_pPr()
     tabs = OxmlElement("w:tabs")

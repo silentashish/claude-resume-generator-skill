@@ -43,16 +43,19 @@ def _raw_extract(pdf_path) -> str:
 
 
 def _check(name, passed, detail, hard=True):
+    """One result row; `hard` failures set the exit code, warnings do not."""
     return {"check": name, "passed": bool(passed), "detail": detail, "hard": hard}
 
 
 def extract(pdf_path: Path):
+    """Open the PDF and return (document, layout-aware text of every page)."""
     doc = pymupdf.open(pdf_path)
     pages = [p.get_text() for p in doc]
     return doc, "\n".join(pages)
 
 
 def check_ats(doc, text, data=None):
+    """Checks on what a parser would see: text, headers, contact, order."""
     results = []
     words = len(text.split())
     results.append(_check("text_extractable", words > 120,
@@ -155,20 +158,24 @@ def check_ats(doc, text, data=None):
     return results
 
 
-def page_fill(doc) -> float:
+def page_fill(doc, margin_in=None) -> float:
     """How much of the last page's text area is used, 0..1.
 
-    The text area is inferred rather than read from the source: the top margin
-    is where the first text on page 1 starts, and margins are assumed
-    symmetric, which holds for every template this skill ships and for most
-    resumes in the wild. Anything sitting inside the bottom margin (a running
+    `margin_in` is the geometry margin the renderer used; build.py passes it so
+    this measures the same text area render.measure did. When verifying a PDF
+    this skill did not produce, the margin is unknown and is inferred instead:
+    the top margin is where the first text on page 1 starts, and margins are
+    assumed symmetric. Anything sitting inside the bottom margin (a running
     footer with the name and page number) is excluded, otherwise every page
     would measure as full.
     """
-    first_blocks = [b for b in doc[0].get_text("blocks") if b[4].strip()]
-    if not first_blocks:
-        return 0.0
-    top = min(b[1] for b in first_blocks)
+    if margin_in is not None:
+        top = float(margin_in) * 72.0
+    else:
+        first_blocks = [b for b in doc[0].get_text("blocks") if b[4].strip()]
+        if not first_blocks:
+            return 0.0
+        top = min(b[1] for b in first_blocks)
     last = doc[doc.page_count - 1]
     bottom_limit = last.rect.height - top
     usable = bottom_limit - top
@@ -201,7 +208,9 @@ def _date_line_edges(doc, date_strings):
     return edges
 
 
-def check_layout(doc, target_pages, date_style="inline", min_fill=0.85, data=None):
+def check_layout(doc, target_pages, date_style="inline", min_fill=0.85, data=None,
+                 margin_in=None):
+    """Physical checks: page count, fill, date alignment, overflow, orphans."""
     results = []
     results.append(_check("page_count", doc.page_count == target_pages,
                           f"{doc.page_count} page(s), target {target_pages}"))
@@ -211,7 +220,7 @@ def check_layout(doc, target_pages, date_style="inline", min_fill=0.85, data=Non
     # hard check so the build loop treats "add content" as a real failure
     # rather than a suggestion. Lower min_fill in the payload only when the
     # profile is genuinely exhausted.
-    fill = page_fill(doc)
+    fill = page_fill(doc, margin_in)
     results.append(_check(
         "page_fill", fill >= min_fill,
         f"last page is {fill * 100:.0f}% filled (minimum {min_fill * 100:.0f}%)"
@@ -373,6 +382,7 @@ def check_keywords(text, jd_path, company=None):
 
 
 def main() -> int:
+    """Run every check on one PDF and print the JSON report; exit 1 on a hard failure."""
     ap = argparse.ArgumentParser()
     ap.add_argument("pdf")
     ap.add_argument("--data")
@@ -381,6 +391,9 @@ def main() -> int:
     ap.add_argument("--target-pages", type=int, default=2)
     ap.add_argument("--min-fill", type=float, default=None,
                     help="override the payload's min_fill (0..1)")
+    ap.add_argument("--margin", type=float, default=None,
+                    help="page margin in inches the PDF was rendered with; "
+                         "inferred from page-1 text when omitted")
     a = ap.parse_args()
 
     data = json.loads(Path(a.data).read_text()) if a.data else None
@@ -389,7 +402,8 @@ def main() -> int:
 
     date_style = (data or {}).get("date_style", "inline")
     min_fill = a.min_fill if a.min_fill is not None else (data or {}).get("min_fill", 0.85)
-    results = check_ats(doc, text, data) + check_layout(doc, target, date_style, min_fill, data)
+    results = (check_ats(doc, text, data)
+               + check_layout(doc, target, date_style, min_fill, data, a.margin))
     if a.jd:
         results.append(check_keywords(text, a.jd, a.company))
 

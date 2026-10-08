@@ -36,6 +36,7 @@ LATEX_CLASSES = ["extarticle"]
 
 
 def main() -> int:
+    """Report every missing binary, module, and LaTeX package; exit 1 if any."""
     problems, notes = [], []
 
     for exe, why in BINARIES.items():

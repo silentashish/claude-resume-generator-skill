@@ -75,8 +75,11 @@ POINTS_PER_INCH = 72.0
 
 
 def _env() -> Environment:
-    # LaTeX uses {} and {{ }} constantly, so the Jinja delimiters are moved out
-    # of the way rather than forcing every template line to be escaped.
+    """Jinja environment with LaTeX-safe delimiters.
+
+    LaTeX uses {} and {{ }} constantly, so the Jinja delimiters are moved out
+    of the way rather than forcing every template line to be escaped.
+    """
     return Environment(
         loader=FileSystemLoader(str(ASSETS)),
         block_start_string="<%", block_end_string="%>",
@@ -193,11 +196,13 @@ def measure(pdf: Path, margin_in: float) -> tuple:
 
 
 def page_count(pdf: Path) -> int:
+    """Number of pages in a compiled PDF."""
     with pymupdf.open(pdf) as d:
         return d.page_count
 
 
 def _build_context(raw: dict, kind: str) -> dict:
+    """Validate the payload and produce the escaped, linkified template context."""
     model = ResumeData(**raw) if kind == "resume" else CoverLetterData(**raw)
     dump = model.model_dump()
     ctx = _linkify(escape_model(model), dump)
@@ -215,6 +220,7 @@ def _build_context(raw: dict, kind: str) -> dict:
 
 
 def _try(template, ctx: dict, settings: dict, workdir: Path, kind: str) -> tuple:
+    """Render and compile once with `settings`; return (pdf, pages, fill)."""
     ctx = {**ctx, **settings}
     tex = workdir / f"{kind}.tex"
     tex.write_text(template.render(**ctx))
@@ -266,6 +272,10 @@ def autofit(template, ctx: dict, workdir: Path, target: int, kind: str) -> tuple
 
 def render(data_path: Path, outdir: Path, kind: str = "resume",
            autofit_enabled: bool = False, make_docx: bool = False) -> dict:
+    """Render one payload to <outdir>/<kind>.pdf (+ .tex, page JPEGs, optional .docx).
+
+    Returns pages, fill, the chosen settings, `fits`, and every autofit attempt.
+    """
     raw = json.loads(Path(data_path).read_text())
     ctx = _build_context(raw, kind)
 
@@ -313,6 +323,7 @@ def render(data_path: Path, outdir: Path, kind: str = "resume",
 
 
 def main() -> int:
+    """CLI wrapper around render(); prints a JSON result."""
     ap = argparse.ArgumentParser()
     ap.add_argument("data")
     ap.add_argument("--outdir", required=True)
