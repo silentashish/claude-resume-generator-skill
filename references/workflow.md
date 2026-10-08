@@ -1,6 +1,6 @@
 # Job description analysis and gap bridging
 
-Read this when working through steps 1-3 of the skill.
+Read this when working through steps 1-4 of the skill.
 
 ## Extracting requirements
 
@@ -18,14 +18,15 @@ since keyword matching compares against their vocabulary, not yours:
 - **Seniority and context** - team size, ownership language, whether they say
   "ship" or "research", regulated industry, on-call. Sets the register.
 
-Two signals worth surfacing to the user because they change whether applying is
-worth the effort: a stack with no overlap at all, and phrasing that implies a
-much higher (or lower) level than they are targeting.
+Two signals worth noting in the delivery message because they change whether
+applying is worth the effort: a stack with no overlap at all, and phrasing
+that implies a much higher (or lower) level than the user is targeting.
+Note them and build anyway; the decision to apply is the user's, made after
+seeing the finished document.
 
 ## Ranking what to include
 
-The resume is a fixed-size container, so including something means excluding
-something else. Rank each candidate bullet by:
+Rank each candidate bullet by:
 
 1. Does it use a term that appears in the mandatory list?
 2. Does it demonstrate the core responsibility rather than an adjacent skill?
@@ -35,6 +36,11 @@ something else. Rank each candidate bullet by:
 Lead each role with its highest-ranked bullet. Screeners read the first bullet
 of the first role and skim from there, so burying the most relevant work in
 position four wastes it.
+
+Ranking decides *order*, not *inclusion*. The page budget decides inclusion:
+keep adding ranked bullets until the target pages are full (see "Filling the
+page budget" in SKILL.md), and only cut when the densest typography still
+overflows.
 
 ## Bridging gaps honestly
 
@@ -57,15 +63,30 @@ or listing a skill because it appears in the posting.
 The test: could the user talk for five minutes about this bullet under a
 follow-up question from someone who does the job? If not, it does not go in.
 
-## Presenting for approval
+When a bridge is borderline, pick the more conservative wording and write
+one line in the notes saying what the bolder wording would have been and why
+it was not used. The user can promote it themselves; they cannot un-send a
+claim that was never theirs.
 
-Show the user a compact table - requirement, proposed evidence, and the exact
-bullet you intend to write - plus the list of gaps you are leaving open. Ask
-directly about anything where the framing could be read as overstating.
+## Recording decisions
 
-This step exists because the user is the only source of truth about what they
-actually did, and because a resume they did not sanction is worse than no
-resume. Do not skip it to save a round trip.
+`tailoring-notes.md` goes in the output folder next to the PDF and is the
+record of every call the run made. It replaces the approval round-trip, so it
+has to be complete enough that the user can disagree with a decision after
+the fact. Sections, each a short list:
+
+- **Direct hits** - requirement, the profile evidence used, where it landed.
+- **Bridges** - requirement, the underlying experience, the exact wording
+  used, and the bolder wording rejected if there was one.
+- **Gaps left open** - requirement and why nothing honest fit.
+- **Content choices** - which roles got all their bullets, which were trimmed
+  and to how many, which projects/publications/certifications were included
+  or dropped, and what filled the page budget.
+- **Layout** - date style and why, target pages, final fill, and any
+  `min_fill` or `target_pages` change with its justification.
+
+Write it before the payload so the payload follows the plan, and update it if
+the build loop changes a decision.
 
 ## Cover letter research
 

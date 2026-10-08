@@ -68,15 +68,17 @@ For example:
 ## Key Principles & Core Philosophy
 
 1. **Code Decides Quality, LLM Writes Content**  
-   The LLM generates resume content, but deterministic code controls layout constraints, character counts, ATS extraction, and PDF visual bounds. Page count and text alignment are verified against the compiled PDF—never estimated.
-2. **Strict Schema Guardrails**  
-   Layout overflow is prevented at the schema level. Pydantic schema validation enforces bullet point counts (e.g., maximum 4 per role) and length limits (e.g., maximum 120 characters per bullet).
+   The LLM generates resume content, but deterministic code controls layout constraints, ATS extraction, page fill, and PDF visual bounds. Page count, page fill, and text alignment are verified against the compiled PDF, never estimated.
+2. **Autonomous End to End**  
+   The skill never pauses for approval. It makes every tailoring call itself (reframings, date style, what to include), records each one in `tailoring-notes.md` next to the PDF, and only stops when the build is clean and the rendered pages have been reviewed. The user reviews the finished document and the notes, not a plan.
 3. **The Honesty Constraint**  
-   * **Never fabricate skills or metrics:** If a skill is missing from the master profile, it is categorized as a genuine gap.
-   * **Translate adjacent experience:** Existing experience is reframed using the job description's vocabulary (e.g., reframing a legacy migration project as scalable architecture).
+   * **Never fabricate skills or metrics:** If a skill is missing from the master profile, it is categorized as a genuine gap and left open.
+   * **Translate adjacent experience:** Existing experience is reframed using the job description's vocabulary (e.g., reframing a legacy migration project as scalable architecture). Borderline reframings take the conservative wording and are flagged in the notes.
    * **Traceable numbers:** All metrics and statistics must originate directly from the master profile.
-4. **Human-in-the-Loop Verification**  
-   Proposed reframings and gap fillings must be explicitly reviewed and approved by the user before resume compilation.
+4. **Full Pages, Real Content**  
+   A two-page target means two full pages. The build fails when the last page is under 85% used (`page_fill`), and the only accepted fix is more real content from the master profile: more bullets on recent roles at full length, a summary, projects, publications, certifications. Schema caps (8 bullets per role, 400 characters each) are sized so master-profile bullets carry over intact. Autofit picks the typography that lands on the target page count with the fullest last page; it never drops content.
+5. **One Consistent Design**  
+   Carlito (Calibri metrics), uppercase name, ruled uppercase section headings, the same two-line entry header in every section, small round bullets with hanging indents, blue underlined links, a name/page footer on page 2, and no entry header ever stranded at a page foot. Every spacing value comes from one autofit rung so the rhythm is even top to bottom.
 
 ---
 
@@ -96,18 +98,18 @@ flowchart TD
         A1 --> B2
     end
 
-    subgraph Approval ["3. Human Verification"]
-        B2 --> C1{User Approval\n& Edits}
-        C1 -- Rejected / Modifications --> B2
+    subgraph Decide ["3. Decide & Record"]
+        B2 --> C1[Choose bridges, date style,\ncontent; write tailoring-notes.md]
     end
 
     subgraph SchemaRender ["4. Schema & Compilation Loop"]
-        C1 -- Approved --> D1[Structured JSON Payload\nresume_data.json]
+        C1 --> D1[Structured JSON Payload\nresume_data.json]
         D1 --> D2[Pydantic Schema Guardrails\n& Style Linting schema.py]
         D2 --> D3[LaTeX Sanitization\n& Jinja2 Rendering render.py]
-        D3 --> D4[LaTeX Compilation\npdflatex]
-        D4 --> D5{Autofit & Page Bounds OK?}
-        D5 -- Bounds Exhausted / Overflow --> D1
+        D3 --> D4[Autofit: every density,\nkeep fullest fitting layout]
+        D4 --> D5{On target pages\n& last page >= 85% full?}
+        D5 -- Overflow: cut weakest bullet --> D1
+        D5 -- Under-filled: add profile content --> D1
     end
 
     subgraph Verification ["5. Verification & Output"]
@@ -115,11 +117,11 @@ flowchart TD
         E1 --> E2{ATS Rules Pass?}
         E2 -- Fail --> D1
         E2 -- Pass --> E3[Render Page JPEGs\npdftoppm]
-        E3 --> E4[Visual Verification & Artifact Packaging\n$CV_HOME/role/company/job-id/]
+        E3 --> E4[Look at the pages, then package\n$CV_HOME/role/company/job-id/]
     end
 
     subgraph CoverLetter ["6. Parallel Cover Letter Track"]
-        C1 -- Approved --> F1[Company Culture & Value Research]
+        C1 --> F1[Company Engineering Research]
         F1 --> F2[Generate Cover Letter JSON\ncover_data.json]
         F2 --> F3[Sanitize & Compile PDF\ncover_letter.tex.j2]
         F3 --> E4
@@ -137,7 +139,8 @@ python3 scripts/preflight.py
 ```
 
 ### System Dependencies
-- **CLI Tools:** `pdflatex` (TeX Live / MacTeX), `pdftoppm` (Poppler utilities)
+- **CLI Tools:** `pdflatex` (TeX Live / MacTeX), `pdftoppm` and `pdftotext` (Poppler utilities)
+- **LaTeX Packages:** `carlito`, `extsizes`, `ulem`, `fontaxes`, `microtype`, `titlesec`, `enumitem`, `hyperref`, `geometry`, `xcolor`; optional `needspace` and `fancyhdr`
 - **Python Libraries:** `pydantic`, `jinja2`, `pymupdf` (PyMuPDF / `fitz`), `python-docx` (optional for Word export)
 - **User Files:**
   - `master_profile.md`: Single source of truth for candidate background (see `assets/master_profile.example.md`).
@@ -158,35 +161,37 @@ python3 scripts/preflight.py
   - **Bridgeable Reframings:** Relevant adjacent experience mapped into the target role's terminology.
   - **Genuine Gaps:** Requirements missing from candidate history.
 
-### 3. Human Verification Step
-- Pauses execution to present proposed bullet points, vocabulary alignment, and reframings to the user.
-- Requires explicit user approval before proceeding to artifact generation.
+### 3. Decide & Record
+- Chooses every reframing, the date style, and what to include, without pausing for approval.
+- Writes `tailoring-notes.md` (direct hits, bridges with exact wording, gaps left open, content choices, layout decisions) so the user can audit each call next to the finished PDF.
 
 ### 4. Schema Generation & Style Linting
 - Constructs `resume_data.json` bound by constraints in `scripts/schema.py`.
-- **Guardrails:** Max 4 bullets per role, max 120 characters per bullet point.
-- **Style Rules (`lint_style()`):** Enforces active verbs, blocks passive wording, em-dashes, or fluff adjectives.
+- **Guardrails:** Max 8 bullets per role, max 400 characters per bullet, sized so master-profile bullets carry over at full length.
+- **Style Rules (`lint_style()`):** Flags hedging phrases, em-dashes, fluff adjectives, and bullets without a number.
 
 ### 5. LaTeX Sanitization & Rendering
 - Passes raw payload through LaTeX escaping (`%` $\rightarrow$ `\%`, `&` $\rightarrow$ `\&`, `$` $\rightarrow$ `\$`, etc.).
-- Inject values into Jinja2 templates (`assets/resume.tex.j2`).
-- Runs **Autofit Loop**: Compiles with `pdflatex` iteratively adjusting typography density (font size, margins, spacing) to guarantee exact page length without dropping content.
+- Injects values into Jinja2 templates (`assets/resume.tex.j2`).
+- Runs the **Autofit Loop**: compiles every rung of a typography ladder (11pt to 9pt, 0.75in to 0.45in margins, leading, bullet and entry spacing), keeps the one that lands on the target page count with the fullest last page, then nudges leading upward until the last page ends at the margin. Content is never dropped.
 
 ### 6. Automated ATS & Layout Verification
 - Uses `scripts/verify.py` to inspect the compiled PDF:
-  - Verifies raw text extraction via PyMuPDF.
+  - Verifies raw text extraction via PyMuPDF and `pdftotext`.
   - Ensures section headers and chronological flow are preserved.
-  - Verifies employer and date proximity (`dates_stay_with_employer`).
-- Rejects build with non-zero exit code if layout or text extraction criteria fail.
+  - Measures the last page's fill (`page_fill`, hard failure under `min_fill`, default 85%).
+  - Verifies employer and date proximity (`dates_stay_with_employer`) and that no header is stranded at a page foot (`no_orphan_headers`).
+- Rejects the build with a non-zero exit code if any hard check fails, and prints a `next_step` naming the fix.
 
 ### 7. Visual Inspection & Artifact Directory
-- Renders high-resolution JPEG images of compiled PDF pages using `pdftoppm`.
+- Renders JPEG images of compiled PDF pages using `pdftoppm`, and the skill looks at them before delivering.
 - Stores final outputs under structured path:
   `$CV_HOME/<role>/<company>/<job-id>/`
   - `resume.pdf` & `resume.tex`
-  - `resume_data.json` & `job-description.md`
-  - `page-1.jpg`, `page-2.jpg`
+  - `resume_data.json`, `job-description.md` & `tailoring-notes.md`
+  - `resume-page-1.jpg`, `resume-page-2.jpg`
   - `build-report.json`
+  - optionally `cover.pdf`, `cover_data.json`, `resume.docx`
 
 ### 8. Parallel Cover Letter Track
 - Conducts targeted research on company culture and engineering values.
@@ -233,6 +238,7 @@ python3 scripts/build.py resume_data.json \
   --company stripe \
   --job-id 4821 \
   --jd job-description.md \
+  --notes tailoring-notes.md \
   --cover cover_data.json
 ```
 
@@ -247,8 +253,14 @@ python3 scripts/verify.py resume.pdf
 
 The skill supports two date formatting options in `resume_data.json`:
 
-- `"date_style": "right"` *(Default)*  
-  Flush-right dates using `\hfill`. Visually clean for human readers, though wide whitespace gaps may cause some raw text extractors to separate dates from employers.
-- `"date_style": "inline"`  
-  Formats headers as `Company | Location | Dates`. Guarantees employer and date remain adjacent during ATS text extraction. Recommended for automated enterprise ATS screening.
+- `"date_style": "inline"` *(Default)*  
+  Bold dates after the italic title (`Title | Dates`). Guarantees employer and date remain adjacent during ATS text extraction. Recommended for automated enterprise ATS screening.
+- `"date_style": "right"`  
+  Flush-right dates using `\hfill`. Traditional for human readers, though wide whitespace gaps may cause some raw text extractors to separate dates from employers.
+
+The skill picks one itself and records the reason in `tailoring-notes.md`.
+
+## Page Fill
+
+`"target_pages"` (1 or 2) and `"min_fill"` (default `0.85`) control the page budget. The build fails when the last page is less full than `min_fill`; the intended fix is more real content from the master profile, and the console `next_step` says exactly what to add. Lower `min_fill` or drop to one page only when the profile is genuinely exhausted.
 

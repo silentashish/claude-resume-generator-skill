@@ -67,8 +67,11 @@ def check_ats(doc, text, data=None):
     # A template variable that silently resolved to a Python object prints its
     # repr into the PDF. It reads as gibberish to a human and poisons the
     # keyword text for a parser, so treat any repr fragment as a hard failure.
-    leaks = [m for m in ("built-in method", "object at 0x", "<bound method",
-                         "Undefined", "None") if m in text]
+    # Matched case-insensitively on word boundaries: section headings render in
+    # caps, so a leaked None once hid inside "PUBLICATIONSNONE".
+    leak_patterns = [r"built-in method", r"object at 0x", r"<bound method",
+                     r"\bUndefined\b", r"\bNone\b", r"(?<=[A-Z])NONE\b"]
+    leaks = [p for p in leak_patterns if re.search(p, text)]
     results.append(_check("no_unresolved_placeholders", not leaks,
                           "no template leakage" if not leaks
                           else f"template variable leaked into the PDF: {leaks}"))
@@ -142,10 +145,9 @@ def check_ats(doc, text, data=None):
     if data:
         years = []
         for r in data.get("experience", []):
-            found = YEAR_RE.findall(r["dates"])
-            m = re.findall(r"(19|20)\d{2}", r["dates"])
+            m = YEAR_RE.search(r["dates"])
             if m:
-                years.append(int(re.search(r"(19|20)\d{2}", r["dates"]).group()))
+                years.append(int(m.group()))
         ordered = years == sorted(years, reverse=True)
         results.append(_check("reverse_chronological", ordered,
                               f"start years {years}" if ordered
@@ -153,10 +155,70 @@ def check_ats(doc, text, data=None):
     return results
 
 
-def check_layout(doc, target_pages, date_style="right"):
+def page_fill(doc) -> float:
+    """How much of the last page's text area is used, 0..1.
+
+    The text area is inferred rather than read from the source: the top margin
+    is where the first text on page 1 starts, and margins are assumed
+    symmetric, which holds for every template this skill ships and for most
+    resumes in the wild. Anything sitting inside the bottom margin (a running
+    footer with the name and page number) is excluded, otherwise every page
+    would measure as full.
+    """
+    first_blocks = [b for b in doc[0].get_text("blocks") if b[4].strip()]
+    if not first_blocks:
+        return 0.0
+    top = min(b[1] for b in first_blocks)
+    last = doc[doc.page_count - 1]
+    bottom_limit = last.rect.height - top
+    usable = bottom_limit - top
+    body = [b for b in last.get_text("blocks")
+            if b[4].strip() and b[1] < bottom_limit - 2]
+    if not body or usable <= 0:
+        return 0.0
+    return max(0.0, min(1.0, (max(b[3] for b in body) - top) / usable))
+
+
+def _date_line_edges(doc, date_strings):
+    """Right edge (x1) of every line that ends with one of the entry dates.
+
+    Lines are rebuilt from PyMuPDF words (block, line numbers) so a date like
+    'Jan 2024 - Present' is matched whole, rather than counting every
+    year-shaped token on the page, most of which are not dates at all
+    (certification years, a '2M+' metric, a paper's year).
+    """
+    edges = []
+    wanted = [d.strip() for d in date_strings if d and d.strip()]
+    for page in doc:
+        lines = {}
+        for w in page.get_text("words"):
+            lines.setdefault((w[5], w[6]), []).append(w)
+        for ws in lines.values():
+            ws.sort(key=lambda w: w[0])
+            text_ = " ".join(w[4] for w in ws)
+            if any(text_.endswith(d) for d in wanted):
+                edges.append(ws[-1][2])
+    return edges
+
+
+def check_layout(doc, target_pages, date_style="inline", min_fill=0.85, data=None):
     results = []
     results.append(_check("page_count", doc.page_count == target_pages,
                           f"{doc.page_count} page(s), target {target_pages}"))
+
+    # A resume that stops two-thirds of the way down its last page reads as
+    # thin, and the master profile almost always had more to give. This is a
+    # hard check so the build loop treats "add content" as a real failure
+    # rather than a suggestion. Lower min_fill in the payload only when the
+    # profile is genuinely exhausted.
+    fill = page_fill(doc)
+    results.append(_check(
+        "page_fill", fill >= min_fill,
+        f"last page is {fill * 100:.0f}% filled (minimum {min_fill * 100:.0f}%)"
+        if fill >= min_fill else
+        f"last page is only {fill * 100:.0f}% filled (minimum {min_fill * 100:.0f}%); "
+        "pull more bullets, projects, publications, or certifications from the "
+        "master profile, or lower min_fill if it is genuinely exhausted"))
 
     page = doc[0]
     # Infer the text block's right edge from the body, then confirm date tokens
@@ -166,11 +228,15 @@ def check_layout(doc, target_pages, date_style="right"):
         return results + [_check("dates_right_aligned", False, "no words on page 1")]
     right_edge = max(all_right)
 
-    date_rights, strays = [], []
-    for pno, p in enumerate(doc):
-        for w in p.get_text("words"):
-            if DATE_TOKEN_RE.search(w[4]):
-                date_rights.append(w[2])
+    date_rights = []
+    if data:
+        entries = data.get("experience", []) + data.get("education", [])
+        date_rights = _date_line_edges(doc, [e.get("dates", "") for e in entries])
+    if not date_rights:
+        for pno, p in enumerate(doc):
+            for w in p.get_text("words"):
+                if DATE_TOKEN_RE.search(w[4]):
+                    date_rights.append(w[2])
     if date_style == "inline":
         # Inline mode deliberately trades flush-right dates for guaranteed
         # employer/date adjacency, so alignment is not a defect here.
@@ -180,8 +246,8 @@ def check_layout(doc, target_pages, date_style="right"):
         aligned = [r for r in date_rights if abs(r - right_edge) < 2.0]
         ratio = len(aligned) / len(date_rights)
         results.append(_check(
-            "dates_right_aligned", ratio >= 0.5,
-            f"{len(aligned)}/{len(date_rights)} date tokens end at the right margin "
+            "dates_right_aligned", ratio >= (0.9 if data else 0.5),
+            f"{len(aligned)}/{len(date_rights)} entry dates end at the right margin "
             f"(x={right_edge:.1f})"))
     else:
         results.append(_check("dates_right_aligned", False, "no date tokens detected"))
@@ -197,14 +263,44 @@ def check_layout(doc, target_pages, date_style="right"):
                           "all text inside margins" if not over
                           else f"{len(over)} token(s) past the margin, e.g. {over[:3]}"))
 
-    # An orphan page holding a few lines looks careless and wastes a page.
-    last = doc[doc.page_count - 1]
-    blocks = [b for b in last.get_text("blocks") if b[4].strip()]
-    fill = (max(b[3] for b in blocks) / last.rect.height) if blocks else 0
-    results.append(_check("no_orphan_page", doc.page_count == 1 or fill > 0.25,
-                          f"last page is {fill * 100:.0f}% filled",
+    # A section heading as the last thing on a page, or an employer name with
+    # its bullets on the next page, is the most visible defect a two-page
+    # resume can have. The template guards against it with \Needspace; this
+    # confirms the guard held.
+    orphans = []
+    for pno in range(doc.page_count - 1):
+        last_line = _last_body_line(doc[pno])
+        if last_line is None:
+            continue
+        text_, bold, size = last_line
+        stripped = text_.strip()
+        if not stripped or stripped.startswith(("•", "-", "*")):
+            continue  # a bullet that wraps onto the next page is fine
+        is_heading = stripped.isupper() and len(stripped) < 40
+        is_entry_header = bold and len(stripped) < 90 and not stripped.endswith(".")
+        if is_heading or is_entry_header:
+            orphans.append((pno + 1, stripped[:40]))
+    results.append(_check("no_orphan_headers", not orphans,
+                          "no heading or entry header stranded at a page foot"
+                          if not orphans else f"stranded at page foot: {orphans}",
                           hard=False))
     return results
+
+
+def _last_body_line(page):
+    """(text, starts_bold, font_size) of the lowest line above the footer zone."""
+    best = None
+    footer_zone = page.rect.height - 40
+    for block in page.get_text("dict")["blocks"]:
+        for line in block.get("lines", []):
+            spans = [s for s in line.get("spans", []) if s["text"].strip()]
+            if not spans or line["bbox"][1] > footer_zone:
+                continue
+            if best is None or line["bbox"][3] > best[0]:
+                text_ = "".join(s["text"] for s in spans)
+                bold = bool(spans[0]["flags"] & 16) or "bold" in spans[0]["font"].lower()
+                best = (line["bbox"][3], text_, bold, spans[0]["size"])
+    return None if best is None else best[1:]
 
 
 def check_keywords(text, jd_path, company=None):
@@ -283,14 +379,17 @@ def main() -> int:
     ap.add_argument("--jd")
     ap.add_argument("--company")
     ap.add_argument("--target-pages", type=int, default=2)
+    ap.add_argument("--min-fill", type=float, default=None,
+                    help="override the payload's min_fill (0..1)")
     a = ap.parse_args()
 
     data = json.loads(Path(a.data).read_text()) if a.data else None
     doc, text = extract(Path(a.pdf))
     target = data.get("target_pages", a.target_pages) if data else a.target_pages
 
-    date_style = (data or {}).get("date_style", "right")
-    results = check_ats(doc, text, data) + check_layout(doc, target, date_style)
+    date_style = (data or {}).get("date_style", "inline")
+    min_fill = a.min_fill if a.min_fill is not None else (data or {}).get("min_fill", 0.85)
+    results = check_ats(doc, text, data) + check_layout(doc, target, date_style, min_fill, data)
     if a.jd:
         results.append(check_keywords(text, a.jd, a.company))
 

@@ -4,9 +4,15 @@ Usage:
     python3 render.py resume_data.json --outdir OUT [--kind resume|cover] [--autofit] [--docx]
 
 Why autofit exists: pdflatex compiles this document in about 0.15s, so it is
-cheaper to try several typographic densities and keep the one that lands on the
-target page count than to hand-tune the payload. Content is never dropped --
-only font size, margins, and section spacing move.
+cheaper to try every typographic density and keep the best one than to
+hand-tune the payload. Content is never dropped -- only font size, margins,
+leading, and spacing move.
+
+"Best" has two parts, in order: the document must land on the target page
+count, and among the settings that do, the one that leaves the least empty
+space on the last page wins. A resume that fits in 1.6 pages at the loosest
+setting is not a success; the fill number comes back in the result so the
+caller can see that the payload is short of content rather than guess.
 """
 
 from __future__ import annotations
@@ -29,17 +35,43 @@ from schema import (CoverLetterData, ResumeData, apply_bold, escape_latex,  # no
 
 ASSETS = Path(__file__).parent.parent / "assets"
 
-# Progressively denser typography. The renderer walks this list and stops at the
-# first setting that fits the target page count. The template uses extarticle,
-# so 9pt is a real font size rather than a scaled hack. The approved reference
-# layout sits around 10pt Carlito with 0.5in margins.
+# Typographic settings from loosest to densest. Every rung is a complete,
+# good-looking design on its own; the walk only decides how much air the
+# content gets. Keys (all consumed by resume.tex.j2):
+#   font_size       pt, extarticle sizes only (9/10/11)
+#   margin          inches, all four sides
+#   linespread      leading multiplier
+#   item_sep        pt between bullets
+#   entry_skip      pt after each role / project / degree
+#   section_before  ex above a section heading
+# The leading rung is deliberately not airy: 11pt at 0.75in with 1.08 leading
+# is the most a two-page resume can stretch before it reads as padded. If the
+# content does not fill the target at that setting, the fix is more content.
 FIT_LADDER = [
-    {"font_size": 11, "margin": 0.65, "section_before": 1.3},
-    {"font_size": 10, "margin": 0.6, "section_before": 1.2},
-    {"font_size": 10, "margin": 0.5, "section_before": 1.0},
-    {"font_size": 9, "margin": 0.5, "section_before": 0.9},
-    {"font_size": 9, "margin": 0.45, "section_before": 0.8},
+    {"font_size": 11, "margin": 0.75, "linespread": 1.08, "item_sep": 3.0, "entry_skip": 6.0, "section_before": 1.8},
+    {"font_size": 11, "margin": 0.70, "linespread": 1.05, "item_sep": 2.5, "entry_skip": 5.0, "section_before": 1.6},
+    {"font_size": 11, "margin": 0.65, "linespread": 1.02, "item_sep": 2.0, "entry_skip": 4.0, "section_before": 1.4},
+    {"font_size": 11, "margin": 0.60, "linespread": 1.00, "item_sep": 1.5, "entry_skip": 3.5, "section_before": 1.2},
+    {"font_size": 10, "margin": 0.70, "linespread": 1.06, "item_sep": 2.5, "entry_skip": 5.0, "section_before": 1.5},
+    {"font_size": 10, "margin": 0.65, "linespread": 1.03, "item_sep": 2.0, "entry_skip": 4.0, "section_before": 1.3},
+    {"font_size": 10, "margin": 0.60, "linespread": 1.00, "item_sep": 1.5, "entry_skip": 3.5, "section_before": 1.2},
+    {"font_size": 10, "margin": 0.55, "linespread": 1.00, "item_sep": 1.0, "entry_skip": 3.0, "section_before": 1.0},
+    {"font_size": 10, "margin": 0.50, "linespread": 0.98, "item_sep": 1.0, "entry_skip": 2.5, "section_before": 0.9},
+    {"font_size": 9, "margin": 0.60, "linespread": 1.03, "item_sep": 1.5, "entry_skip": 3.5, "section_before": 1.1},
+    {"font_size": 9, "margin": 0.55, "linespread": 1.00, "item_sep": 1.0, "entry_skip": 3.0, "section_before": 1.0},
+    {"font_size": 9, "margin": 0.50, "linespread": 1.00, "item_sep": 1.0, "entry_skip": 2.5, "section_before": 0.9},
+    {"font_size": 9, "margin": 0.45, "linespread": 0.98, "item_sep": 0.5, "entry_skip": 2.0, "section_before": 0.8},
 ]
+# Used when autofit is off: the reference design's density.
+DEFAULT_SETTINGS = FIT_LADDER[7]
+
+# After the best rung is found, leading is nudged up in these steps while the
+# page count still holds, so the last page ends as close to the margin as the
+# content allows. Capped so the result never looks double-spaced.
+LEADING_STEP = 0.01
+LEADING_MAX_EXTRA = 0.08
+
+POINTS_PER_INCH = 72.0
 
 
 def _env() -> Environment:
@@ -93,7 +125,7 @@ def contact_lines(contact: dict, raw_contact: dict) -> tuple:
         url = raw_contact.get(f"{key}_url")
         line2.append(f"{label}: " + (_href(url, disp) if url else disp))
 
-    sep = " $|$ "
+    sep = r" \textbar{} "
     return sep.join(p for p in line1 if p), sep.join(line2)
 
 
@@ -121,7 +153,7 @@ def _linkify(obj, raw):
 
 
 def compile_pdf(tex_path: Path, workdir: Path) -> Path:
-    """Compile twice so \\hfill positions and any references settle."""
+    """Compile twice so \\hfill positions, page totals, and references settle."""
     for _ in range(2):
         proc = subprocess.run(
             ["pdflatex", "-interaction=nonstopmode", "-halt-on-error",
@@ -139,62 +171,143 @@ def compile_pdf(tex_path: Path, workdir: Path) -> Path:
     return pdf
 
 
+def measure(pdf: Path, margin_in: float) -> tuple:
+    """(page count, fill of the last page's text area, 0..1).
+
+    Fill is the lowest body text edge on the last page relative to the text
+    area between the margins. The running footer lives inside the bottom
+    margin and is excluded, otherwise every page would measure as full.
+    """
+    with pymupdf.open(pdf) as d:
+        n = d.page_count
+        last = d[n - 1]
+        top = margin_in * POINTS_PER_INCH
+        bottom_limit = last.rect.height - top
+        usable = bottom_limit - top
+        body = [b for b in last.get_text("blocks")
+                if b[4].strip() and b[1] < bottom_limit - 2]
+        if not body or usable <= 0:
+            return n, 0.0
+        fill = (max(b[3] for b in body) - top) / usable
+        return n, max(0.0, min(1.0, fill))
+
+
 def page_count(pdf: Path) -> int:
     with pymupdf.open(pdf) as d:
         return d.page_count
 
 
-def render(data_path: Path, outdir: Path, kind: str = "resume",
-           autofit: bool = False, make_docx: bool = False) -> dict:
-    raw = json.loads(Path(data_path).read_text())
+def _build_context(raw: dict, kind: str) -> dict:
     model = ResumeData(**raw) if kind == "resume" else CoverLetterData(**raw)
+    dump = model.model_dump()
+    ctx = _linkify(escape_model(model), dump)
+    ctx["contact_line1"], ctx["contact_line2"] = contact_lines(
+        ctx["contact"], dump["contact"])
+    if kind == "resume":
+        # Readable display text for project links (github.com/user/repo).
+        for esc_p, raw_p in zip(ctx.get("projects", []), dump.get("projects", [])):
+            if raw_p.get("url"):
+                esc_p["url_display"] = escape_latex(short_url(raw_p["url"]))
+        # Optional strings default to "" so the template never prints "None".
+        ctx["publications_suffix"] = ctx.get("publications_suffix") or ""
+        ctx["summary"] = ctx.get("summary") or ""
+    return ctx
+
+
+def _try(template, ctx: dict, settings: dict, workdir: Path, kind: str) -> tuple:
+    ctx = {**ctx, **settings}
+    tex = workdir / f"{kind}.tex"
+    tex.write_text(template.render(**ctx))
+    pdf = compile_pdf(tex, workdir)
+    pages, fill = measure(pdf, settings["margin"])
+    return pdf, pages, fill
+
+
+def autofit(template, ctx: dict, workdir: Path, target: int, kind: str) -> tuple:
+    """Walk the ladder, then nudge leading, keeping the fullest fitting layout.
+
+    Returns (settings, pages, fill, attempts). `attempts` records every try so
+    the build report can show why a setting was chosen.
+    """
+    attempts = []
+    best = None  # (fill, -index, settings, pages)
+    for i, rung in enumerate(FIT_LADDER):
+        _, pages, fill = _try(template, ctx, rung, workdir, kind)
+        attempts.append({**rung, "pages": pages, "fill": round(fill, 3)})
+        if pages <= target:
+            key = (pages == target, fill, -i)
+            if best is None or key > best[0]:
+                best = (key, rung, pages, fill)
+
+    if best is None:
+        # Nothing fits even at the densest rung. Return it so the caller sees
+        # the overflow; the honest fix is editorial, not typographic.
+        densest = FIT_LADDER[-1]
+        _, pages, fill = _try(template, ctx, densest, workdir, kind)
+        return densest, pages, fill, attempts
+
+    _, chosen, pages, fill = best
+    # Fine-tune: add leading in small steps while the page count holds. This
+    # closes the gap between "fits" and "fills" without changing font or margin.
+    extra = LEADING_STEP
+    while extra <= LEADING_MAX_EXTRA + 1e-9 and fill < 0.995:
+        cand = {**chosen, "linespread": round(chosen["linespread"] + extra, 3)}
+        _, p2, f2 = _try(template, ctx, cand, workdir, kind)
+        attempts.append({**cand, "pages": p2, "fill": round(f2, 3), "fine_tune": True})
+        if p2 != pages or f2 < fill:
+            break
+        chosen, fill = cand, f2
+        extra += LEADING_STEP
+
+    # Re-render the winner so the .tex/.pdf on disk match the reported settings.
+    _try(template, ctx, chosen, workdir, kind)
+    return chosen, pages, fill, attempts
+
+
+def render(data_path: Path, outdir: Path, kind: str = "resume",
+           autofit_enabled: bool = False, make_docx: bool = False) -> dict:
+    raw = json.loads(Path(data_path).read_text())
+    ctx = _build_context(raw, kind)
 
     outdir.mkdir(parents=True, exist_ok=True)
     workdir = outdir / ".build"
     workdir.mkdir(exist_ok=True)
 
-    dump = model.model_dump()
-    ctx = _linkify(escape_model(model), dump)
-    ctx["contact_line1"], ctx["contact_line2"] = contact_lines(
-        ctx["contact"], dump["contact"])
-    # Readable display text for project links (github.com/user/repo).
-    for esc_p, raw_p in zip(ctx.get("projects", []), dump.get("projects", [])):
-        if raw_p.get("url"):
-            esc_p["url_display"] = escape_latex(short_url(raw_p["url"]))
-    ctx.setdefault("date_style", raw.get("date_style", "right"))
-
     template = _env().get_template(
         "resume.tex.j2" if kind == "resume" else "cover_letter.tex.j2"
     )
 
-    target = raw.get("target_pages", 2) if kind == "resume" else 1
-    settings_list = FIT_LADDER if (autofit and kind == "resume") else [FIT_LADDER[2]]
-
-    chosen, pdf, pages = None, None, None
-    for settings in settings_list:
-        ctx.update(settings)
-        tex = workdir / f"{kind}.tex"
-        tex.write_text(template.render(**ctx))
-        pdf = compile_pdf(tex, workdir)
-        pages = page_count(pdf)
-        chosen = settings
-        if pages <= target:
-            break
+    if kind == "resume":
+        target = int(raw.get("target_pages", 2))
+        if autofit_enabled:
+            chosen, pages, fill, attempts = autofit(template, ctx, workdir, target, kind)
+        else:
+            chosen = DEFAULT_SETTINGS
+            _, pages, fill = _try(template, ctx, chosen, workdir, kind)
+            attempts = [{**chosen, "pages": pages, "fill": round(fill, 3)}]
+    else:
+        target = 1
+        chosen = {"margin": 1.0}
+        _, pages, fill = _try(template, ctx, chosen, workdir, kind)
+        attempts = []
 
     final_pdf = outdir / f"{kind}.pdf"
-    shutil.copy(pdf, final_pdf)
+    shutil.copy(workdir / f"{kind}.pdf", final_pdf)
     shutil.copy(workdir / f"{kind}.tex", outdir / f"{kind}.tex")
 
     # Page images for visual review. JPEG at 110 DPI is legible in-chat and small.
+    for old in outdir.glob(f"{kind}-page*.jpg"):
+        old.unlink()
     subprocess.run(["pdftoppm", "-jpeg", "-r", "110", str(final_pdf),
                     str(outdir / f"{kind}-page")], capture_output=True)
 
     result = {"pdf": str(final_pdf), "pages": pages, "target_pages": target,
-              "settings": chosen, "fits": pages <= target}
+              "fill": round(fill, 3), "settings": chosen,
+              "fits": pages <= target, "attempts": attempts}
 
     if make_docx and kind == "resume":
         from render_docx import build_docx
-        result["docx"] = str(build_docx(raw, outdir / f"{kind}.docx"))
+        result["docx"] = str(build_docx(raw, outdir / f"{kind}.docx", chosen))
 
     return result
 
