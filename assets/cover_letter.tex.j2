@@ -1,9 +1,11 @@
-% One-page cover letter matching the resume header. Rendered by scripts/render.py.
+% One-page cover letter sharing the resume's header and typography.
+% Rendered by scripts/render.py.
 \documentclass[11pt,letterpaper]{extarticle}
-\usepackage[margin=1in]{geometry}
+\usepackage[margin=<< margin >>in]{geometry}
 \usepackage{xcolor}
 \definecolor{linkblue}{RGB}{5,99,193}
-\usepackage[colorlinks=true,urlcolor=linkblue,linkcolor=linkblue]{hyperref}
+\definecolor{rulegray}{RGB}{70,70,70}
+\usepackage[colorlinks=true,urlcolor=linkblue,linkcolor=linkblue,pdfborder={0 0 0}]{hyperref}
 \IfFileExists{ulem.sty}{\usepackage[normalem]{ulem}}{\newcommand{\uline}[1]{##1}}
 % Carlito = Calibri metrics; fall back to Helvetica so the build never dies.
 \IfFileExists{carlito.sty}
@@ -12,34 +14,41 @@
 % No fi/fl ligatures: they extract as single Unicode glyphs and break naive
 % ATS keyword matching.
 \IfFileExists{microtype.sty}{\usepackage{microtype}\DisableLigatures{encoding = *, family = *}}{}
-\usepackage{parskip}
 \pagestyle{empty}
-\raggedright
+\linespread{1.08}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0pt}
+\setlength{\emergencystretch}{2em}
+\hyphenpenalty=3000
 
 \begin{document}
 
+%% ---- Header: identical to the resume so the two read as one application ----
 \begin{center}
-  {\LARGE\bfseries\MakeUppercase{<< contact.name >>}}\\[0.3em]
-  << contact_line1 >><% if contact_line2 %>\\
+  {\LARGE\bfseries\MakeUppercase{<< contact.name >>}}\\[0.35em]
+  << contact_line1 >><% if contact_line2 %>\\[0.15em]
   << contact_line2 >><% endif %>
 \end{center}
-\vspace{1.2em}
+\vspace{0.4em}
+{\color{rulegray}\hrule height 0.7pt}
+\vspace{1.6em}
 
-\noindent << date >>
+<< date >>
 
-\vspace{0.8em}
-\noindent Re: << role_title >> at << company >>
+\vspace{1.0em}
+\textbf{Re: << role_title >> at << company >>}
 
-\vspace{0.8em}
-\noindent << salutation >>
+\vspace{1.0em}
+<< salutation >>
 
+\vspace{0.6em}
 <% for p in paragraphs %>
-<< p >>
-\par\vspace{0.75em}
+<< p >>\par
+\vspace{0.75em}
 <% endfor %>
 
-\vspace{1.2em}
-\noindent << closing >>\\
+\vspace{0.6em}
+<< closing >>\\[0.6em]
 << contact.name >>
 
 \end{document}

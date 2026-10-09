@@ -9,7 +9,6 @@ from __future__ import annotations
 import importlib
 import shutil
 import subprocess
-import sys
 
 BINARIES = {
     "pdflatex": "LaTeX compiler (TeX Live / MiKTeX)",
@@ -28,10 +27,16 @@ OPTIONAL = {"docx": "python-docx, only needed for --docx output"}
 # breakable underlined links; microtype disables ATS-hostile ligatures.
 LATEX_PACKAGES = ["geometry", "enumitem", "titlesec", "hyperref", "xcolor",
                   "ulem", "carlito", "fontaxes", "microtype"]
+# The template degrades gracefully without these (no orphan guard, no page-2
+# footer), so they are reported rather than required.
+LATEX_OPTIONAL = {"needspace": "keeps an entry header on the same page as its bullets",
+                  "fancyhdr": "name and page number in the footer of page 2",
+                  "mylatexformat": "precompiled preamble cache, about a 2x faster build"}
 LATEX_CLASSES = ["extarticle"]
 
 
 def main() -> int:
+    """Report every missing binary, module, and LaTeX package; exit 1 if any."""
     problems, notes = [], []
 
     for exe, why in BINARIES.items():
@@ -65,6 +70,14 @@ def main() -> int:
             else:
                 problems.append(f"MISSING LaTeX package {name}.{ext} "
                                 f"(tlmgr install {'extsizes' if name == 'extarticle' else name})")
+        for name, why in LATEX_OPTIONAL.items():
+            ext = "ltx" if name == "mylatexformat" else "sty"
+            r = subprocess.run(["kpsewhich", f"{name}.{ext}"], capture_output=True, text=True)
+            if r.stdout.strip():
+                notes.append(f"ok    LaTeX package {name} (optional)")
+            else:
+                notes.append(f"--    LaTeX package {name} not installed - {why} "
+                             f"(tlmgr install {name})")
 
     print("\n".join(notes))
     if problems:

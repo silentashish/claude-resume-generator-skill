@@ -1,7 +1,8 @@
 % ATS-safe single-column resume. Rendered by scripts/render.py.
-% Design matches the approved dense reference layout: Carlito (metric clone of
-% Calibri, the same face LibreOffice ships), uppercase name, blue underlined
-% hyperlinks, bold inline metrics, tight two-page density.
+% Design: Carlito (metric clone of Calibri, the same face LibreOffice ships),
+% uppercase name, blue underlined hyperlinks, bold inline metrics, ruled
+% uppercase section headings, two-line entry headers that look the same in
+% every section (bold primary line, italic secondary line, bold dates).
 % Rules that exist for parsing reasons, not aesthetic ones:
 %   - single column, no tabular/multicol layout (column layouts interleave text
 %     when extracted linearly, scrambling the reading order)
@@ -9,13 +10,20 @@
 %   - standard section names (Experience / Education / Skills / Projects)
 %   - every hyperlink's display text is the readable address or a label next to
 %     one, so a parser that strips link annotations loses nothing
+% Everything from here to the "Per-build settings" line depends only on the
+% font size, so render.py dumps it into a precompiled format once per font
+% size (mylatexformat's end-of-dump marker is rendered just above that line)
+% and reuses it across every autofit attempt and every later build. Keep
+% per-payload and per-rung values (name, margin, leading, spacing) below it.
 \documentclass[<< font_size >>pt,letterpaper]{extarticle}
-\usepackage[margin=<< margin >>in]{geometry}
+\usepackage{geometry}
 \usepackage{enumitem}
 \usepackage{titlesec}
 \usepackage{xcolor}
 \definecolor{linkblue}{RGB}{5,99,193}
-\usepackage[colorlinks=true,urlcolor=linkblue,linkcolor=linkblue]{hyperref}
+\definecolor{rulegray}{RGB}{70,70,70}
+\definecolor{footgray}{RGB}{120,120,120}
+\usepackage[colorlinks=true,urlcolor=linkblue,linkcolor=linkblue,pdfborder={0 0 0}]{hyperref}
 % Breakable underlines for links; degrade to no underline on a minimal install.
 \IfFileExists{ulem.sty}{\usepackage[normalem]{ulem}}{\newcommand{\uline}[1]{##1}}
 % Carlito = Calibri metrics; fall back to Helvetica so the build never dies.
@@ -25,84 +33,132 @@
 % No fi/fl ligatures: they extract as single Unicode glyphs (U+FB01...) and
 % break naive ATS keyword matching ("fintech" becomes "&#xFB01;ntech").
 \IfFileExists{microtype.sty}{\usepackage{microtype}\DisableLigatures{encoding = *, family = *}}{}
+% Keep an entry's header on the same page as its first bullets. An employer
+% name alone at the foot of page 1 is the most visible layout defect a
+% two-page resume can have.
+\IfFileExists{needspace.sty}{\usepackage{needspace}}{\newcommand{\Needspace}[1]{}}
+\IfFileExists{fancyhdr.sty}{\usepackage{fancyhdr}\newif\ifhavefancy\havefancytrue}{\newif\ifhavefancy\havefancyfalse}
+<< endofdump >>
 
-\pagestyle{empty}
-\setlist[itemize]{leftmargin=1.15em, topsep=1pt, itemsep=1pt, parsep=0pt}
-\titleformat{\section}{\large\bfseries\uppercase}{}{0em}{}[\vspace{-0.65em}\rule{\linewidth}{0.8pt}]
-\titlespacing{\section}{0pt}{<< section_before >>ex}{0.55ex}
+% ---- Per-build settings (below the format split) ---------------------------
+\geometry{margin=<< margin >>in,footskip=0.28in}
+% Continuation pages carry the name and page number in the footer so a
+% separated second sheet is still attributable. Page 1 stays clean.
+\ifhavefancy
+  \fancypagestyle{resume}{\fancyhf{}\renewcommand{\headrulewidth}{0pt}%
+    \fancyfoot[C]{\footnotesize\color{footgray}<< contact.name >> \textbar{} Page \thepage}}
+  \pagestyle{resume}
+\else
+  \pagestyle{empty}
+\fi
+
+% ---- Typography -----------------------------------------------------------
+\linespread{<< linespread >>}
+\setlength{\parindent}{0pt}
 \setlength{\parskip}{0pt}
+\setlength{\emergencystretch}{2em}
+\hyphenpenalty=3000
+\exhyphenpenalty=3000
 \raggedbottom
-\raggedright
+
+% Section heading: uppercase, bold, with a hairline rule tight underneath.
+\titleformat{\section}{\large\bfseries}{}{0em}{\MakeUppercase}
+  [{\color{rulegray}\vspace{-0.45ex}\titlerule[0.7pt]}]
+\titlespacing*{\section}{0pt}{<< section_before >>ex}{0.8ex}
+
+% One bullet style everywhere: small round bullet, hanging indent, even gaps.
+\setlist[itemize]{label={\small\textbullet}, leftmargin=1.25em, labelsep=0.55em,
+  topsep=1.5pt, itemsep=<< item_sep >>pt, parsep=0pt, partopsep=0pt}
+% Skills and similar key/value rows: no bullet, flush left, same vertical rhythm.
+\newlist{rows}{itemize}{1}
+\setlist[rows]{label={}, leftmargin=0pt, labelsep=0pt, topsep=1.5pt,
+  itemsep=<< item_sep >>pt, parsep=0pt, partopsep=0pt}
+
+% Entry headers. Every section uses the same two lines:
+%   line 1: bold primary  (company / institution / project name)   [dates]
+%   line 2: italic secondary (title / degree / tech)               [location]
+% \sep is the visual divider between inline pieces of one line.
+\newcommand{\sep}{\hspace{0.35em}\textbar{}\hspace{0.35em}}
+\newcommand{\entryskip}{\vspace{<< entry_skip >>pt}}
+\newcommand{\entryhead}[4]{% #1 primary, #2 dates, #3 secondary, #4 location
+  \Needspace{4\baselineskip}%
+  <% if date_style == 'inline' %>
+  \textbf{#1}\ifx\relax#4\relax\else{\sep #4}\fi\\
+  \textit{#3}\ifx\relax#2\relax\else{\sep\textbf{#2}}\fi\par
+  <% else %>
+  \textbf{#1}\ifx\relax#4\relax\else{\sep #4}\fi\hfill\textbf{#2}\\
+  \textit{#3}\par
+  <% endif %>
+}
 
 \begin{document}
+\thispagestyle{empty}
 
 %% ---- Header ----
 \begin{center}
-  {\LARGE\bfseries\MakeUppercase{<< contact.name >>}}\\[0.3em]
-  << contact_line1 >><% if contact_line2 %>\\
+  {\LARGE\bfseries\MakeUppercase{<< contact.name >>}}\\[0.35em]
+  << contact_line1 >><% if contact_line2 %>\\[0.15em]
   << contact_line2 >><% endif %>
 \end{center}
-\vspace{0.1em}
+\vspace{0.2em}
 
 <% if summary %>
 \section{Summary}
-<< summary >>
+<< summary >>\par
 <% endif %>
 
 \section{Skills}
-\begin{itemize}
+\begin{rows}
 <% for g in skills %>  \item \textbf{<< g.label >>:} << g["items"] >>
-<% endfor %>\end{itemize}
+<% endfor %>\end{rows}
 
 \section{Work Experience}
 <% for role in experience %>
-<% if date_style == 'inline' %>
-\noindent\textbf{<< role.company >>}<% if role.location %> -- << role.location >><% endif %>\\
-\textit{<< role.title >>} $|$ \textbf{<< role.dates >>}
-<% else %>
-\noindent\textbf{<< role.company >>}<% if role.location %> -- << role.location >><% endif %> \hfill \textbf{<< role.dates >>}\\
-\textit{<< role.title >>}
-<% endif %>
+\entryhead{<< role.company >>}{<< role.dates >>}{<< role.title >>}{<% if role.location %><< role.location >><% else %>\relax<% endif %>}
 \begin{itemize}
 <% for b in role.bullets %>  \item << b >>
 <% endfor %><% if role.project_name %>  \item[] Project: <% if role.project_url %>\href{<< role.project_url >>}{\uline{<< role.project_name >>}}<% else %><< role.project_name >><% endif %>
 <% endif %>\end{itemize}
-\vspace{0.35em}
+<% if not loop.last %>\entryskip
+<% endif %>
 <% endfor %>
 
 <% if projects %>
 \section{Projects}
 <% for p in projects %>
-\noindent\textbf{<< p.name >>}<% if p.url %> $|$ GitHub: \href{<< p.url >>}{\uline{<< p.url_display >>}}<% endif %>
+\Needspace{3\baselineskip}%
+\textbf{<< p.name >>}<% if p.url %>\sep GitHub: \href{<< p.url >>}{\uline{<< p.url_display >>}}<% endif %><% if p.tech %>\\
+\textit{<< p.tech >>}<% endif %>\par
 <% if p.bullets %>\begin{itemize}
 <% for b in p.bullets %>  \item << b >>
-<% endfor %>\end{itemize}<% endif %>
-\vspace{0.25em}
+<% endfor %>\end{itemize}
+<% endif %>
+<% if not loop.last %>\entryskip
+<% endif %>
 <% endfor %>
 <% endif %>
 
 <% if publications %>
-\section{Publications<< publications_suffix | default('') >>}
+\section{Publications<< publications_suffix >>}
 \begin{itemize}
-<% for p in publications %>  \item \textbf{<< p.title >>}<% if p.venue or p.year %> (<% if p.venue %><< p.venue >><% endif %><% if p.venue and p.year %>, <% endif %><% if p.year %><< p.year >><% endif %>)<% endif %><% if p.note %>: << p.note >><% endif %><% if p.url %> \href{<< p.url >>}{\uline{<< p.link_label or 'Link' >>}}<% endif %>
+<% for p in publications %>  \item \textbf{<< p.title >>}<% if p.venue or p.year %> (<% if p.venue %><< p.venue >><% endif %><% if p.venue and p.year %>, <% endif %><% if p.year %><< p.year >><% endif %>)<% endif %><% if p.note %>. << p.note >><% endif %><% if p.url %> \href{<< p.url >>}{\uline{<< p.link_label or 'Link' >>}}<% endif %>
 <% endfor %>\end{itemize}
 <% endif %>
 
 \section{Education}
 <% for e in education %>
-<% if date_style == 'inline' %>
-\noindent\textbf{<< e.institution >>}\\
-\textit{<< e.degree >>} $|$ \textbf{<< e.dates >>}<% if e.detail %>\\<< e.detail >><% endif %>\par
-<% else %>
-\noindent\textbf{<< e.institution >>} \hfill \textbf{<< e.dates >>}\\
-\textit{<< e.degree >>}<% if e.detail %>\\<< e.detail >><% endif %>\par
+\entryhead{<< e.institution >>}{<< e.dates >>}{<< e.degree >>}{<% if e.location %><< e.location >><% else %>\relax<% endif %>}
+<% if e.detail %><< e.detail >>\par
 <% endif %>
-\vspace{0.35em}
+<% if not loop.last %>\entryskip
+<% endif %>
 <% endfor %>
 
 <% if certifications %>
 \section{Certifications}
-\noindent <% for c in certifications %><% if c.url %>\href{<< c.url >>}{\uline{<< c.name >>}}<% else %>\textbf{<< c.name >>}<% endif %><% if c.issuer %> (<< c.issuer >>)<% endif %><% if c.year %> << c.year >><% endif %><% if not loop.last %> $|$ <% endif %><% endfor %>
+\begin{itemize}
+<% for c in certifications %>  \item <% if c.url %>\href{<< c.url >>}{\uline{\textbf{<< c.name >>}}}<% else %>\textbf{<< c.name >>}<% endif %><% if c.issuer %>, << c.issuer >><% endif %><% if c.year %>, << c.year >><% endif %>
+<% endfor %>\end{itemize}
 <% endif %>
 
 \end{document}

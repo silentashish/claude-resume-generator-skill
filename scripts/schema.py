@@ -14,13 +14,20 @@ from typing import List, Optional
 from pydantic import BaseModel, Field, field_validator
 
 # --- Layout budget -----------------------------------------------------------
-# These are the levers that control page count. Raise them only if the verify
-# step says there is room; lower them when a document overflows.
-# Calibrated against the approved dense two-page reference layout (Carlito
-# ~10pt, 0.5in margins): a 350-char bullet wraps to about three lines there.
-MAX_BULLETS_PER_ROLE = 6
-MAX_BULLET_CHARS = 350
-MAX_SKILL_GROUPS = 8
+# These caps exist to stop a runaway payload, not to ration content. The
+# renderer's autofit absorbs length by moving typography, and the verify step
+# measures how full the last page actually is, so the right amount of content
+# is "enough to fill the target page count", not "as little as possible".
+# Calibrated against the dense two-page reference layout (Carlito ~10pt,
+# 0.5in margins): a 400-char bullet wraps to three or four lines there.
+MAX_BULLETS_PER_ROLE = 8
+MAX_BULLET_CHARS = 400
+MAX_PROJECT_BULLETS = 4
+MAX_SKILL_GROUPS = 10
+# Fraction of the last page's text area that must be used before a build is
+# accepted. Below this the document reads as thin, and almost always the
+# master profile had more to give.
+DEFAULT_MIN_FILL = 0.85
 
 
 class Contact(BaseModel):
@@ -75,6 +82,7 @@ class Role(BaseModel):
     @field_validator("bullets")
     @classmethod
     def bullets_fit(cls, v: List[str]) -> List[str]:
+        """Reject empty bullets and any longer than MAX_BULLET_CHARS."""
         for i, b in enumerate(v):
             if len(b) > MAX_BULLET_CHARS:
                 raise ValueError(
@@ -91,11 +99,12 @@ class Project(BaseModel):
     tech: Optional[str] = Field(default=None, max_length=120)
     url: Optional[str] = Field(default=None, max_length=200,
                                description="GitHub/demo link; shown as 'GitHub: <short url>'")
-    bullets: List[str] = Field(default_factory=list, max_length=3)
+    bullets: List[str] = Field(default_factory=list, max_length=MAX_PROJECT_BULLETS)
 
     @field_validator("bullets")
     @classmethod
     def bullets_fit(cls, v: List[str]) -> List[str]:
+        """Reject project bullets longer than MAX_BULLET_CHARS."""
         for b in v:
             if len(b) > MAX_BULLET_CHARS:
                 raise ValueError(f"project bullet exceeds {MAX_BULLET_CHARS} chars: {b[:60]}...")
@@ -106,7 +115,9 @@ class Education(BaseModel):
     institution: str = Field(max_length=80)
     degree: str = Field(max_length=90)
     dates: str = Field(max_length=30)
-    detail: Optional[str] = Field(default=None, max_length=140)
+    location: Optional[str] = Field(default=None, max_length=40)
+    detail: Optional[str] = Field(default=None, max_length=200,
+                                  description="thesis, GPA, honours, relevant coursework")
 
 
 class Certification(BaseModel):
@@ -168,15 +179,23 @@ class ResumeData(BaseModel):
         default=None, max_length=30,
         description="appended to the Publications header, e.g. ' (70+ Citations)'")
     target_pages: int = Field(default=2, ge=1, le=2)
+    min_fill: float = Field(
+        default=DEFAULT_MIN_FILL, ge=0.0, le=1.0,
+        description=(
+            "Fraction of the last page's text area that must be used. The build "
+            "fails below it. Lower it only when the master profile is genuinely "
+            "exhausted, and say so in the tailoring notes."
+        ),
+    )
     date_style: str = Field(
-        default="right",
+        default="inline",
         pattern="^(right|inline)$",
         description=(
-            "'right' flush-rights dates with \\hfill and looks better. 'inline' puts "
-            "them on the same line after a pipe. Raw-mode PDF text extractors split "
-            "on wide whitespace gaps and relocate flush-right dates to the end of the "
-            "stream, detaching them from their employer; use 'inline' when ATS "
-            "parsing matters more than appearance."
+            "'inline' (default) puts bold dates after the italic title, separated "
+            "by a bar, so employer and dates cannot be separated by extraction. "
+            "'right' flush-rights dates with \\hfill; raw-mode PDF text extractors "
+            "split on wide whitespace gaps and can relocate flush-right dates to the "
+            "end of the stream, so use it only when a human reads the PDF first."
         ),
     )
 
@@ -307,7 +326,7 @@ def lint_style(data: dict) -> List[str]:
         low = t.lower()
         if t.count("**") % 2 != 0:
             warnings.append(f"{where}: unbalanced ** bold marker; it will print literally")
-        if "\u2014" in t or "\u2013" in t:
+        if "\u2014" in t or "\u2013" in t or " -- " in t or " --- " in t:
             warnings.append(f"{where}: contains an em/en dash; rewrite as plain speech")
         for h in _HEDGES:
             if h in low:

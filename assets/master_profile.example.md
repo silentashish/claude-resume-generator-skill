@@ -5,6 +5,12 @@ file, never an addition to it. Keep it exhaustive and unpolished: include work
 that will not fit on any resume, because the whole point is having material to
 choose from when a posting asks for something unexpected.
 
+Exhaustive matters for a second reason: the generator fills two pages
+completely and only pulls real content from here. Six to ten bullets per role,
+every side project, every certification, every publication, and the education
+details (thesis, coursework, honours) give it enough to choose from. A thin
+profile produces a thin resume, and the build will say so.
+
 Record numbers here with their provenance, so a bullet can be defended later.
 
 Two conventions the renderer understands and preserves:
@@ -63,9 +69,10 @@ Everything done here, one line each. More detail than any resume will hold.
 ## Education
 
 ### University of Alabama in Huntsville
-M.S. Computer Science, expected 2026
+M.S. Computer Science, Aug 2024 - May 2026 | Huntsville, AL
 Thesis: Mitigating Reconstruction Loss in Neural Compression for Downstream
 Tasks Using Weight-Decomposed Low-Rank Adaptation (DoRA)
+GPA 3.9/4.0. Coursework: Distributed Systems, Deep Learning, Computer Vision.
 
 ## Skills
 
