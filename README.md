@@ -152,7 +152,7 @@ python3 scripts/preflight.py
 ## Detailed Step-by-Step Execution
 
 ### 1. Job Description Extraction
-- Fetches and stores the job posting verbatim as `job-description.md` inside the application output folder.
+- Uses a job description the caller already saved (or fetches and stores the posting verbatim) as `job-description.md` inside the application output folder.
 - Extracts technical keywords, preferred skills, core responsibilities, and seniority markers.
 
 ### 2. Gap Analysis & Technical Alignment
@@ -164,7 +164,8 @@ python3 scripts/preflight.py
 
 ### 3. Decide & Record
 - Chooses every reframing, the date style, and what to include, without pausing for approval.
-- Writes `tailoring-notes.md` (direct hits, bridges with exact wording, gaps left open, content choices, layout decisions) so the user can audit each call next to the finished PDF.
+- Writes `tailoring-notes.md` in a fixed, parseable structure (direct hits, reframings used with their source fact and exact wording, gaps left open, decisions) so the user, or an app around the skill, can audit each call next to the finished PDF.
+- Follows caller rules: wordings to avoid and preferred wordings passed in the prompt.
 
 ### 4. Schema Generation & Style Linting
 - Constructs `resume_data.json` bound by constraints in `scripts/schema.py`.

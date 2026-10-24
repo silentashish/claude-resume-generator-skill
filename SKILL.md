@@ -24,13 +24,17 @@ reviews the finished PDF and the notes, not a plan. The only reason to stop
 early is a missing prerequisite (no master profile, no job description, or a
 failed preflight), and even then say exactly what is missing in one message.
 
-**2. Never fabricate.** The user has to defend every line in an interview.
-When the posting asks for something the master profile does not contain,
-describe genuinely adjacent experience in the posting's vocabulary (a
-PHP-to-Node migration is real evidence for "scalable backend architecture"),
-or leave the gap open and note it. Every number traces to the profile. When
-unsure whether a reframing is honest, choose the more conservative wording
-and note the judgement call, rather than asking.
+**2. Bridge boldly, never fabricate.** The user has to defend every line in
+an interview. When the posting asks for something the master profile does not
+state in the posting's terms, use the genuinely adjacent experience and say it
+in the posting's vocabulary, confidently: a PHP-to-Node migration is real
+evidence for "scalable backend architecture", a dashboard built for analysts is
+real evidence for "stakeholder-facing data products". Lead with transferable
+work rather than leaving a requirement unanswered. Every bridge is listed in
+`tailoring-notes.md` with its source fact. The line that is never crossed: no
+invented employer, title, degree, date, number, or skill the profile does not
+show being used. Every number traces to the profile. When there is truly
+nothing to bridge, leave the gap open and note it.
 
 **3. Fill the target pages.** Two pages means two full pages. The master
 profile is deliberately exhaustive, and a two-page resume that stops two
@@ -59,7 +63,9 @@ defaults to `~/cv`; look there for `master-profile.md` first.
 
 ### 1. Get the job description
 
-Fetch the URL or take the pasted text. Save it verbatim as
+If the caller already saved the posting (it names a file), read that file and
+pass the same path to `build.py --jd`; do not write it out again. Otherwise
+fetch the URL or take the pasted text and save it verbatim as
 `job-description.md`; postings get taken down. Extract mandatory skills,
 preferred skills, core responsibilities, and seniority signals, keeping the
 posting's own wording. `references/workflow.md` covers this in depth.
@@ -74,11 +80,36 @@ blog or public stack gives vocabulary for framing, never claims.
 
 ### 3. Decide and record
 
-Write `tailoring-notes.md` before the payload. It holds: the direct hits,
-each bridge with the exact wording used, each gap left open, the date style
-chosen, which bullets were cut or trimmed and why, and any judgement call on
-honesty. This file replaces the approval round-trip: the user reads it next
-to the PDF. Then proceed; do not wait.
+Write `tailoring-notes.md` before the payload, in exactly this structure (a
+program reads it; keep entries to one line each, no prose essays):
+
+```markdown
+# Tailoring notes
+<!-- resume-tailor notes v2 -->
+
+## Direct hits
+- <requirement>: <profile evidence>
+
+## Reframings used
+### <requirement from the posting>
+- Source fact: <verbatim sentence or bullet from the master profile>
+- Wording: <as written in the resume>
+
+## Gaps left open
+- <requirement>: <why nothing honest fits>
+
+## Decisions
+- <date style and why, bullets cut or trimmed, judgement calls on honesty>
+```
+
+Write "None." under a section that has nothing. This file replaces the
+approval round-trip: the user reads it next to the PDF. Then proceed; do not
+wait.
+
+**Caller rules.** The caller may list wordings to avoid and preferred
+wordings (each with its source fact), e.g. reframings the user rejected or
+approved earlier. Never use an avoided wording, or a close paraphrase of it,
+for that fact; use a preferred wording as given when its fact is used.
 
 ### 4. Write the payload
 
@@ -182,8 +213,8 @@ the two read as one application.
 
 One message: where the files are, the page count and fill, the date style
 chosen, the bridges used, the gaps left open, and any warning from the
-report worth the user's attention. Point them at `tailoring-notes.md` for
-the full record.
+report worth the user's attention. Keep it short: the notes file holds the
+full record.
 
 ## Design
 
